@@ -11,6 +11,7 @@ import (
 	"github.com/virtualbeck/inherit-core/internal/awsx"
 	"github.com/virtualbeck/inherit-core/internal/discover"
 	"github.com/virtualbeck/inherit-core/internal/hydrate"
+	"github.com/virtualbeck/inherit-core/internal/prune"
 	"github.com/virtualbeck/inherit-core/internal/redact"
 	"github.com/virtualbeck/inherit-core/internal/version"
 )
@@ -25,6 +26,7 @@ func scanCmd() *cobra.Command {
 		servicesExclude  []string
 		servicesInclude  []string
 		includeEphemeral bool
+		includeDefaults  bool
 		debug            bool
 		yes              bool
 	)
@@ -42,6 +44,7 @@ func scanCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			explicitRegions := len(regions) > 0
 			if len(regions) == 0 {
 				regions, err = awsx.EnabledRegions(ctx, cfg)
 				if err != nil {
@@ -117,6 +120,19 @@ func scanCmd() *cobra.Command {
 				}
 			}
 
+			pr := prune.Noise(&inv, prune.Options{
+				IncludeDefaults: includeDefaults,
+				KeepAllRegions:  explicitRegions,
+			})
+			if !pr.Empty() {
+				fmt.Fprintf(os.Stderr, "  pruned %d default + %d singleton resources", pr.Defaults, pr.Singletons)
+				if len(pr.Regions) > 0 {
+					fmt.Fprintf(os.Stderr, "; %d regions with nothing in use dropped (%s)", len(pr.Regions), strings.Join(pr.Regions, ", "))
+				}
+				fmt.Fprintf(os.Stderr, "\n  %d resources across %d regions kept (--include-defaults to keep everything)\n",
+					len(inv.Resources), len(inv.Regions))
+			}
+
 			secrets := redact.Split(&inv)
 
 			if err := os.MkdirAll(absOut, 0o755); err != nil {
@@ -149,6 +165,7 @@ func scanCmd() *cobra.Command {
 	f.StringSliceVar(&servicesExclude, "services-exclude", nil, "AWS services or service:type to skip")
 	f.StringSliceVar(&servicesInclude, "services-include", nil, "scan ONLY these AWS services")
 	f.BoolVar(&includeEphemeral, "include-ephemeral", false, "keep snapshots / AMIs / backups (skipped by default)")
+	f.BoolVar(&includeDefaults, "include-defaults", false, "keep AWS-created default VPCs/SGs and per-region setting singletons, and every region (pruned by default)")
 	f.BoolVar(&debug, "debug", false, "verbose diagnostics")
 	f.BoolVarP(&yes, "yes", "y", false, "skip the confirmation prompt")
 	return cmd

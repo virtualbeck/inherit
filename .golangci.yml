@@ -1,0 +1,19 @@
+version: "2"
+
+# errcheck, govet, ineffassign, staticcheck and unused are enabled by default.
+linters:
+  enable:
+    - bodyclose
+    - misspell
+    - unconvert
+  exclusions:
+    rules:
+      # The AWS SDK deprecates fields the Terraform provider still requires
+      # (e.g. cloudfront forwarded_values). Reading them is intentional.
+      - path: internal/hydrate/
+        linters: [staticcheck]
+        text: "SA1019"
+      # report generators write to stdout; a failed Fprintf is not actionable.
+      - path: internal/tfschema/cmd/
+        linters: [errcheck]
+        text: "fmt.Fprint"

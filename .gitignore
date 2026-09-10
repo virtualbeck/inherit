@@ -1,0 +1,22 @@
+# build output
+/dist/
+/inherit
+/bin/
+
+# generated projects (default output dir)
+/inherit-out/
+/out/
+
+# terraform / opentofu
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfplan
+
+# local scratch
+*.local
+CLAUDE.local.md
+.env

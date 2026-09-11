@@ -14,6 +14,10 @@ linters:
         linters: [staticcheck]
         text: "SA1019"
       # report generators write to stdout; a failed Fprintf is not actionable.
-      - path: internal/tfschema/cmd/
+      # (tfschema moved out of internal/ during the inherit-core extraction;
+      # this path went stale then and the exclusion silently stopped
+      # matching -- golangci-lint had never actually run against this repo
+      # until now to catch it.)
+      - path: tfschema/cmd/
         linters: [errcheck]
         text: "fmt.Fprint"

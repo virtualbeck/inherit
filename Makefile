@@ -11,7 +11,9 @@ LDFLAGS := -s -w \
 	-X $(PKG)/internal/version.Commit=$(COMMIT) \
 	-X $(PKG)/internal/version.Date=$(DATE)
 
-.PHONY: build dev test vet fmt lint coverage
+PLATFORMS ?= linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
+
+.PHONY: build dev dist test vet fmt lint coverage
 
 build:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o bin/$(BIN) ./cmd/inherit
@@ -19,6 +21,16 @@ build:
 
 dev:
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o bin/$(BIN)-linux-amd64 ./cmd/inherit
+
+dist:
+	@mkdir -p dist
+	@$(foreach p,$(PLATFORMS), \
+		os=$(word 1,$(subst /, ,$(p))); arch=$(word 2,$(subst /, ,$(p))); \
+		out=dist/$(BIN)_$(VERSION)_$${os}_$${arch}; \
+		echo "-> $${out}"; \
+		CGO_ENABLED=0 GOOS=$${os} GOARCH=$${arch} $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $${out} ./cmd/inherit || exit 1; \
+	)
+	@cd dist && sha256sum inherit_* > SHA256SUMS
 
 test:
 	$(GO) test ./...

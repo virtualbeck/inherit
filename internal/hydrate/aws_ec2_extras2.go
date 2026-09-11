@@ -72,6 +72,19 @@ func hydrateEC2InstanceConnectEndpoint(ctx context.Context, c *Clients, r model.
 		return nil, fmt.Errorf("not found")
 	}
 	e := out.InstanceConnectEndpoints[0]
+	// A deleted (or deleting) endpoint's tagging-API record lingers for a
+	// while -- confirmed against a real account: DescribeInstanceConnectEndpoints
+	// kept returning delete-complete well after the endpoint, its subnet,
+	// and its VPC were all gone (subnet/VPC ids 404 outright; this API
+	// alone still answers). Hydrating it anyway produces a resource whose
+	// referenced subnet/security groups were never discoverable, which
+	// then shows up downstream as a "hardcoded ID" finding with no real
+	// fix available -- the same "discovered but not really there" shape
+	// already guarded for ECS clusters/task definitions.
+	switch string(e.State) {
+	case "delete-complete", "delete-in-progress":
+		return nil, fmt.Errorf("%s EC2 Instance Connect Endpoint (deleted)", e.State)
+	}
 	cfg := map[string]any{
 		"subnet_id": aws.ToString(e.SubnetId),
 	}

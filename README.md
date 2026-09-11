@@ -93,6 +93,14 @@ inherit submit --out ./inherit-<account>
 `submit` packages `inventory.tar.gz` in that same directory -- drop it on
 the site to preview your generated project and its price.
 
+`scan` is a point-in-time snapshot. If something in the account gets
+created, changed, or torn down after you scan but before you run
+`tofu import`/`apply` on the delivered project, that drift is real and
+expected -- `tofu plan` will tell you (e.g. "Cannot import non-existent
+remote object" for something deleted in between). Run `scan` -> `submit`
+-> apply reasonably close together, especially against an account with
+anything actively churning.
+
 ## Build
 
 ```sh

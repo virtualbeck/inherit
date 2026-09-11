@@ -11,7 +11,7 @@ LDFLAGS := -s -w \
 	-X $(PKG)/internal/version.Commit=$(COMMIT) \
 	-X $(PKG)/internal/version.Date=$(DATE)
 
-PLATFORMS ?= linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
+PLATFORMS ?= linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 
 .PHONY: build dev dist test vet fmt lint coverage
 
@@ -26,7 +26,8 @@ dist:
 	@mkdir -p dist
 	@$(foreach p,$(PLATFORMS), \
 		os=$(word 1,$(subst /, ,$(p))); arch=$(word 2,$(subst /, ,$(p))); \
-		out=dist/$(BIN)_$(VERSION)_$${os}_$${arch}; \
+		ext=$(if $(filter windows,$(word 1,$(subst /, ,$(p)))),.exe,); \
+		out=dist/$(BIN)_$(VERSION)_$${os}_$${arch}$${ext}; \
 		echo "-> $${out}"; \
 		CGO_ENABLED=0 GOOS=$${os} GOARCH=$${arch} $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $${out} ./cmd/inherit || exit 1; \
 	)

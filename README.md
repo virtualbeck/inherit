@@ -33,6 +33,45 @@ guide for wiring them back up.
 Secrets Manager values, RDS/Redshift master passwords, and SSM `SecureString`
 are never read in the first place.
 
+## Installation
+
+Grab a prebuilt binary from the [Releases](https://github.com/virtualbeck/inherit/releases)
+page, or build from source (see [Build](#build)).
+
+### macOS
+
+```sh
+curl -LO https://github.com/virtualbeck/inherit/releases/latest/download/inherit_<version>_darwin_<arch>
+chmod +x inherit_<version>_darwin_<arch>
+sudo mv inherit_<version>_darwin_<arch> /usr/local/bin/inherit
+```
+
+`<arch>` is `arm64` on Apple Silicon, `amd64` on Intel Macs. The binary is
+unsigned, so the first run will need `xattr -d com.apple.quarantine
+/usr/local/bin/inherit` or an approval click through **System
+Settings > Privacy & Security**.
+
+### Linux
+
+```sh
+curl -LO https://github.com/virtualbeck/inherit/releases/latest/download/inherit_<version>_linux_<arch>
+chmod +x inherit_<version>_linux_<arch>
+sudo mv inherit_<version>_linux_<arch> /usr/local/bin/inherit
+```
+
+`<arch>` is `amd64` or `arm64`.
+
+### Windows
+
+Download `inherit_<version>_windows_<arch>.exe` from the
+[Releases](https://github.com/virtualbeck/inherit/releases) page (`amd64` or
+`arm64`), then run it from PowerShell or `cmd.exe`. It isn't code-signed, so
+SmartScreen will flag it on first run; click **More info > Run anyway**, or
+build from source if you'd rather not.
+
+Verify any download against the `SHA256SUMS` file published alongside each
+release.
+
 ## Usage
 
 ```sh
@@ -45,6 +84,9 @@ inherit submit --out ./inherit-<account>
 ```sh
 go build ./cmd/inherit
 ```
+
+`make dist` cross-compiles release binaries for macOS, Linux, and Windows
+(amd64 + arm64 each) into `dist/`.
 
 ## License
 

@@ -1,7 +1,6 @@
 package redact
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/virtualbeck/inherit/model"
@@ -34,6 +33,7 @@ func TestSplit(t *testing.T) {
 			Config: map[string]any{"container_definitions": `[{"name":"web","environment":[{"name":"API_KEY","value":"k-live-xyz"}],"secrets":[{"name":"S","valueFrom":"arn:..."}]}]`},
 		},
 	}}
+	origECSContainerDefs := inv.Resources[4].Config["container_definitions"]
 
 	secrets := Split(inv)
 
@@ -59,17 +59,11 @@ func TestSplit(t *testing.T) {
 		t.Error("SecureString SSM value should not have been touched")
 	}
 
-	// ECS container env value redacted, secrets[] untouched
-	var containers []map[string]any
-	if err := json.Unmarshal([]byte(inv.Resources[4].Config["container_definitions"].(string)), &containers); err != nil {
-		t.Fatal(err)
-	}
-	env := containers[0]["environment"].([]any)[0].(map[string]any)
-	if env["value"] != Sentinel {
-		t.Errorf("ECS env value not redacted: %v", env)
-	}
-	if containers[0]["secrets"] == nil {
-		t.Error("ECS secrets[] should be left alone")
+	// ECS container_definitions is left entirely untouched -- environment[]
+	// isn't covered (see redact.go's package doc for why); a real secret
+	// placed there instead of secrets[] is a mistake made outside this tool.
+	if inv.Resources[4].Config["container_definitions"] != origECSContainerDefs {
+		t.Errorf("ECS container_definitions should be untouched, got: %v", inv.Resources[4].Config["container_definitions"])
 	}
 
 	// every redacted value is recoverable from the secrets slice
@@ -78,15 +72,18 @@ func TestSplit(t *testing.T) {
 		byPath[s.ResourceARN+"|"+s.Path] = s.Value
 	}
 	want := map[string]string{
-		"arn:aws:lambda:us-east-1:1:function:f|environment.variables.DB_URL":                       "postgres://user:pw@host/db",
-		"arn:aws:ec2:us-east-1:1:instance/i-1|user_data":                                           "#!/bin/bash\nexport TOKEN=abc123",
-		"arn:aws:ssm:us-east-1:1:parameter/p|value":                                                "super-secret",
-		"arn:aws:ecs:us-east-1:1:task-definition/t:1|container_definitions[0].environment.API_KEY": "k-live-xyz",
+		"arn:aws:lambda:us-east-1:1:function:f|environment.variables.DB_URL":    "postgres://user:pw@host/db",
+		"arn:aws:lambda:us-east-1:1:function:f|environment.variables.LOG_LEVEL": "info",
+		"arn:aws:ec2:us-east-1:1:instance/i-1|user_data":                        "#!/bin/bash\nexport TOKEN=abc123",
+		"arn:aws:ssm:us-east-1:1:parameter/p|value":                             "super-secret",
 	}
 	for k, v := range want {
 		if byPath[k] != v {
 			t.Errorf("secret %q = %q, want %q", k, byPath[k], v)
 		}
+	}
+	if len(secrets) != len(want) {
+		t.Errorf("got %d secrets, want %d -- ECS environment[] should never produce one: %+v", len(secrets), len(want), secrets)
 	}
 }
 

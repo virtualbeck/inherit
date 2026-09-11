@@ -33,6 +33,12 @@ wiring them back up.
 Secrets Manager values, RDS/Redshift master passwords, and SSM `SecureString`
 are never read in the first place.
 
+An AWS access key ID (`AKIA...`/`ASIA...`) is redacted wherever it turns up
+in a resource's config, not just the fields above -- confirmed against a
+real account: IAM users tagged with their own access key ID as the tag
+*key*, a common way to label "which key is this". The tag's human label
+(the value) stays legible; only the key ID itself is stripped.
+
 ECS container `environment[]` values are **not** redacted -- there's no
 reliable way to tell a real secret apart from ordinary plaintext config
 (log level, hostname, feature flags) there, and AWS itself never treats the

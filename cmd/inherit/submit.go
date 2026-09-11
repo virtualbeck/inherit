@@ -94,7 +94,7 @@ func submitCmd() *cobra.Command {
 			if resp.StatusCode/100 != 2 {
 				return fmt.Errorf("backend returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 			}
-			fmt.Fprintf(os.Stderr, "done. %s\n", strings.TrimSpace(string(body)))
+			printSubmitResult(body)
 			return nil
 		},
 	}
@@ -104,6 +104,29 @@ func submitCmd() *cobra.Command {
 	f.BoolVar(&dryRun, "dry-run", false, "package inventory.tar.gz but do not upload")
 	_ = cmd.MarkFlagRequired("out")
 	return cmd
+}
+
+// printSubmitResult prints a human summary of the backend's /submit
+// response instead of dumping raw JSON. Deliberately tolerant: this is core
+// parsing a shape owned by the (separate, private) backend, so any mismatch
+// falls back to the raw body rather than erroring the command that just
+// successfully uploaded.
+func printSubmitResult(body []byte) {
+	var out struct {
+		PreviewURL string `json:"preview_url"`
+		Preview    struct {
+			Resources int `json:"resources"`
+			Price     struct {
+				Total int `json:"total"`
+			} `json:"price"`
+		} `json:"preview"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil || out.PreviewURL == "" {
+		fmt.Fprintf(os.Stderr, "done. %s\n", strings.TrimSpace(string(body)))
+		return
+	}
+	fmt.Fprintf(os.Stderr, "done. %d resources, $%d one-time.\n", out.Preview.Resources, out.Preview.Price.Total)
+	fmt.Fprintf(os.Stderr, "preview: %s\n", out.PreviewURL)
 }
 
 func confirm(prompt string) (bool, error) {

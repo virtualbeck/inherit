@@ -21,11 +21,28 @@
 // real secret placed in environment[] instead of secrets[] was already a
 // mistake made outside this tool, in the live AWS account, before inherit
 // ever saw it.
+//
+// One more thing is covered unconditionally, for every resource regardless
+// of type: an AWS access key ID (AKIA.../ASIA...) turning up anywhere in
+// Config, map key or value, at any depth. Confirmed against a real
+// account: IAM users tagged with their own access key ID as the tag KEY
+// (a common way to label "which key is this"), a location none of the
+// field-specific rules above would ever look at. The paired secret is
+// never read by this tool either way -- an access key ID alone can't
+// authenticate -- but it's still a real, live credential's identifier and
+// has no business leaving the machine.
 package redact
 
 import (
+	"fmt"
+	"regexp"
+
 	"github.com/virtualbeck/inherit/model"
 )
+
+// accessKeyRe matches a 20-character AWS access key ID: AKIA (long-term,
+// an IAM user's own key) or ASIA (temporary, STS-issued).
+var accessKeyRe = regexp.MustCompile(`^(?:AKIA|ASIA)[A-Z0-9]{16}$`)
 
 // Sentinel replaces a redacted value in inventory.json. The backend
 // recognizes it and emits the field with lifecycle.ignore_changes.
@@ -54,6 +71,7 @@ func Split(inv *model.Inventory) []Secret {
 		if r.Config == nil {
 			continue
 		}
+		redactAccessKeyIDs(*r, r.Config, add)
 		switch r.TFType {
 		case "aws_lambda_function":
 			redactLambdaEnv(*r, r.Config, add)
@@ -117,4 +135,73 @@ func lambdaEnvVars(cfg map[string]any) map[string]any {
 		}
 	}
 	return nil
+}
+
+// redactAccessKeyIDs walks every string anywhere in cfg -- map keys and
+// values, at any depth -- and redacts anything shaped like an AWS access
+// key ID. Not gated by TFType, attribute name, or "this looks like a tags
+// map": an access key ID can turn up anywhere a human decided to jot one
+// down, most commonly a tag but not provably only there, and the pattern
+// is specific enough (20 chars, AKIA/ASIA-prefixed) that scanning
+// everything costs nothing in false positives.
+func redactAccessKeyIDs(r model.Resource, cfg map[string]any, add func(model.Resource, string, string)) {
+	redactAccessKeyIDsAt(r, cfg, "", add)
+}
+
+func redactAccessKeyIDsAt(r model.Resource, v any, path string, add func(model.Resource, string, string)) {
+	switch m := v.(type) {
+	case map[string]any:
+		n := 0
+		renames := map[string]string{}
+		for k, val := range m {
+			sub := joinPath(path, k)
+			if accessKeyRe.MatchString(k) {
+				n++
+				add(r, sub+".key", k)
+				renames[k] = fmt.Sprintf("%s_key_%d", Sentinel, n)
+			}
+			if s, ok := val.(string); ok {
+				if s != Sentinel && accessKeyRe.MatchString(s) {
+					add(r, sub, s)
+					m[k] = Sentinel
+				}
+			} else {
+				redactAccessKeyIDsAt(r, val, sub, add)
+			}
+		}
+		for old, nw := range renames {
+			m[nw] = m[old]
+			delete(m, old)
+		}
+	case map[string]string:
+		n := 0
+		renames := map[string]string{}
+		for k, val := range m {
+			sub := joinPath(path, k)
+			if accessKeyRe.MatchString(k) {
+				n++
+				add(r, sub+".key", k)
+				renames[k] = fmt.Sprintf("%s_key_%d", Sentinel, n)
+			}
+			if val != Sentinel && accessKeyRe.MatchString(val) {
+				add(r, sub, val)
+				m[k] = Sentinel
+			}
+		}
+		for old, nw := range renames {
+			m[nw] = m[old]
+			delete(m, old)
+		}
+	case []any:
+		for i, e := range m {
+			redactAccessKeyIDsAt(r, e, fmt.Sprintf("%s[%d]", path, i), add)
+		}
+	}
+}
+
+func joinPath(path, key string) string {
+	if path == "" {
+		return key
+	}
+	return path + "." + key
 }

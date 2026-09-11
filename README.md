@@ -1,9 +1,9 @@
 # inherit-core
 
 Inherited an AWS account that isn't infrastructure-as-code? This is the free,
-open-source half of [inherit](https://github.com/virtualbeck/inherit): it runs
-**on your machine**, discovers what's in the account using **read-only AWS APIs
-only**, and writes a flat `inventory.json` describing it.
+open-source half of **inherit**: it runs **on your machine**, discovers what's
+in the account using **read-only AWS APIs only**, and writes a flat
+`inventory.json` describing it.
 
 That file is the input to the inherit backend, which turns it into a working
 OpenTofu/Terraform project. **The backend is the paid product; this tool is

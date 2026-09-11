@@ -15,9 +15,9 @@ half that touches your account is open.
 - `inherit scan` makes **no network calls except to read-only AWS APIs**
   (`Describe*` / `List* `/ `Get*` + `sts:GetCallerIdentity`). A signing-time
   guard rejects anything else before it leaves the process.
-- `inherit submit` makes exactly one additional call: uploading the redacted
-  `inventory.json` to the backend. It has a browser-upload fallback if your
-  environment blocks that.
+- `inherit submit` makes **no network calls at all**. It packages the
+  redacted `inventory.json` into `inventory.tar.gz` on disk; you drop that
+  file on the site yourself to preview the generated project and its price.
 - It never writes, changes, or deletes anything in your account.
 
 ## Redaction
@@ -35,31 +35,35 @@ are never read in the first place.
 
 ## Installation
 
-Grab a prebuilt binary from the [Releases](https://github.com/virtualbeck/inherit/releases)
-page, or build from source (see [Build](#build)).
-
-### macOS
+### macOS / Linux
 
 ```sh
-curl -LO https://github.com/virtualbeck/inherit/releases/latest/download/inherit_<version>_darwin_<arch>
-chmod +x inherit_<version>_darwin_<arch>
-sudo mv inherit_<version>_darwin_<arch> /usr/local/bin/inherit
+curl -fsSL https://raw.githubusercontent.com/virtualbeck/inherit/main/install.sh | sh
 ```
 
-`<arch>` is `arm64` on Apple Silicon, `amd64` on Intel Macs. The binary is
-unsigned, so the first run will need `xattr -d com.apple.quarantine
-/usr/local/bin/inherit` or an approval click through **System
-Settings > Privacy & Security**.
+Downloads the right binary for your OS/arch, verifies it against the
+release's `SHA256SUMS`, and installs it to `~/.local/bin/inherit` -- no
+`sudo`, nothing written outside your home directory. Re-run any time to
+update. If `~/.local/bin` isn't already on your `PATH`, the script tells you
+the line to add.
 
-### Linux
+Prefer to do it by hand, or want it somewhere else (`INHERIT_INSTALL_DIR`
+overrides the install directory)? Grab a binary directly from
+[Releases](https://github.com/virtualbeck/inherit/releases):
 
 ```sh
-curl -LO https://github.com/virtualbeck/inherit/releases/latest/download/inherit_<version>_linux_<arch>
-chmod +x inherit_<version>_linux_<arch>
-sudo mv inherit_<version>_linux_<arch> /usr/local/bin/inherit
+curl -LO https://github.com/virtualbeck/inherit/releases/latest/download/inherit_<version>_<os>_<arch>
+chmod +x inherit_<version>_<os>_<arch>
+mv inherit_<version>_<os>_<arch> ~/.local/bin/inherit   # or /usr/local/bin, if you'd rather it be system-wide
 ```
 
-`<arch>` is `amd64` or `arm64`.
+`<os>` is `darwin` or `linux`; `<arch>` is `amd64` or `arm64` (`arm64` on
+Apple Silicon). On macOS the binary is unsigned, so the first run will need
+`xattr -d com.apple.quarantine <path>` or an approval click through
+**System Settings > Privacy & Security**.
+
+Verify any download against the `SHA256SUMS` file published alongside each
+release -- `install.sh` above does this for you automatically.
 
 ### Windows
 
@@ -78,6 +82,9 @@ release.
 inherit scan --profile my-readonly-profile --regions us-east-1
 inherit submit --out ./inherit-<account>
 ```
+
+`submit` packages `inventory.tar.gz` in that same directory -- drop it on
+the site to preview your generated project and its price.
 
 ## Build
 

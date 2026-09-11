@@ -9,8 +9,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,15 +18,14 @@ import (
 )
 
 func submitCmd() *cobra.Command {
-	var (
-		outDir   string
-		endpoint string
-		dryRun   bool
-	)
+	var outDir string
 	cmd := &cobra.Command{
 		Use:   "submit",
-		Short: "Package inventory.json into inventory.tar.gz and upload it to the backend",
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		Short: "Package inventory.json into inventory.tar.gz",
+		Long: "Package inventory.json into inventory.tar.gz. This command only ever writes " +
+			"to disk -- it makes no network calls. Drop the resulting file on the site to " +
+			"preview the generated project and its price.",
+		RunE: func(_ *cobra.Command, _ []string) error {
 			invPath := filepath.Join(outDir, "inventory.json")
 			inv, err := os.ReadFile(invPath)
 			if err != nil {
@@ -72,61 +69,14 @@ func submitCmd() *cobra.Command {
 			}
 			fmt.Fprintf(os.Stderr, "packaged %s (%d bytes, sha256 %s)\n",
 				tgzPath, buf.Len(), hex.EncodeToString(sum[:])[:12])
-
-			if dryRun || endpoint == "" {
-				fmt.Fprintln(os.Stderr, "no --endpoint set: upload skipped. Upload inventory.tar.gz through the site.")
-				return nil
-			}
-
-			fmt.Fprintf(os.Stderr, "uploading to %s ...\n", endpoint)
-			req, err := http.NewRequestWithContext(cmd.Context(), http.MethodPost,
-				strings.TrimRight(endpoint, "/")+"/submit", bytes.NewReader(buf.Bytes()))
-			if err != nil {
-				return err
-			}
-			req.Header.Set("Content-Type", "application/gzip")
-			resp, err := (&http.Client{Timeout: 60 * time.Second}).Do(req)
-			if err != nil {
-				return err
-			}
-			defer func() { _ = resp.Body.Close() }()
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-			if resp.StatusCode/100 != 2 {
-				return fmt.Errorf("backend returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-			}
-			printSubmitResult(body)
+			fmt.Fprintln(os.Stderr, "drop it on the site to preview your project and its price.")
 			return nil
 		},
 	}
 	f := cmd.Flags()
 	f.StringVarP(&outDir, "out", "o", "", "the directory `inherit scan` wrote to")
-	f.StringVar(&endpoint, "endpoint", os.Getenv("INHERIT_ENDPOINT"), "backend base URL (default: $INHERIT_ENDPOINT)")
-	f.BoolVar(&dryRun, "dry-run", false, "package inventory.tar.gz but do not upload")
 	_ = cmd.MarkFlagRequired("out")
 	return cmd
-}
-
-// printSubmitResult prints a human summary of the backend's /submit
-// response instead of dumping raw JSON. Deliberately tolerant: this is core
-// parsing a shape owned by the (separate, private) backend, so any mismatch
-// falls back to the raw body rather than erroring the command that just
-// successfully uploaded.
-func printSubmitResult(body []byte) {
-	var out struct {
-		PreviewURL string `json:"preview_url"`
-		Preview    struct {
-			Resources int `json:"resources"`
-			Price     struct {
-				Total int `json:"total"`
-			} `json:"price"`
-		} `json:"preview"`
-	}
-	if err := json.Unmarshal(body, &out); err != nil || out.PreviewURL == "" {
-		fmt.Fprintf(os.Stderr, "done. %s\n", strings.TrimSpace(string(body)))
-		return
-	}
-	fmt.Fprintf(os.Stderr, "done. %d resources, $%d one-time.\n", out.Preview.Resources, out.Preview.Price.Total)
-	fmt.Fprintf(os.Stderr, "preview: %s\n", out.PreviewURL)
 }
 
 func confirm(prompt string) (bool, error) {

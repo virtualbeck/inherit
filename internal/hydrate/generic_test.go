@@ -3,7 +3,7 @@ package hydrate
 import (
 	"testing"
 
-	"github.com/virtualbeck/inherit-core/tfschema"
+	"github.com/virtualbeck/inherit/tfschema"
 )
 
 func TestGenericFiltersToSchema(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	agw "github.com/aws/aws-sdk-go-v2/service/apigateway"
 	agwtypes "github.com/aws/aws-sdk-go-v2/service/apigateway/types"
-	"github.com/virtualbeck/inherit-core/model"
+	"github.com/virtualbeck/inherit/model"
 )
 
 func init() {

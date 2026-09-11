@@ -3,7 +3,7 @@ package prune
 import (
 	"testing"
 
-	"github.com/virtualbeck/inherit-core/model"
+	"github.com/virtualbeck/inherit/model"
 )
 
 func names(inv model.Inventory) map[string]bool {

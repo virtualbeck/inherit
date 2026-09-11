@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
-	"github.com/virtualbeck/inherit-core/model"
+	"github.com/virtualbeck/inherit/model"
 )
 
 // fanoutLambdaPermissions turns the resource policy of a function into one

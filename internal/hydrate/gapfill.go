@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/virtualbeck/inherit-core/model"
+	"github.com/virtualbeck/inherit/model"
 )
 
 // GapFiller discovers resource types the Resource Groups Tagging API does not

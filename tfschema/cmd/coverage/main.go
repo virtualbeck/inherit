@@ -12,8 +12,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/virtualbeck/inherit-core/internal/hydrate"
-	"github.com/virtualbeck/inherit-core/tfschema"
+	"github.com/virtualbeck/inherit/internal/hydrate"
+	"github.com/virtualbeck/inherit/tfschema"
 )
 
 // multiWordServices are provider type prefixes whose "service" is more than one

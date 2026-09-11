@@ -8,12 +8,12 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/virtualbeck/inherit-core/internal/awsx"
-	"github.com/virtualbeck/inherit-core/internal/discover"
-	"github.com/virtualbeck/inherit-core/internal/hydrate"
-	"github.com/virtualbeck/inherit-core/internal/prune"
-	"github.com/virtualbeck/inherit-core/internal/redact"
-	"github.com/virtualbeck/inherit-core/internal/version"
+	"github.com/virtualbeck/inherit/internal/awsx"
+	"github.com/virtualbeck/inherit/internal/discover"
+	"github.com/virtualbeck/inherit/internal/hydrate"
+	"github.com/virtualbeck/inherit/internal/prune"
+	"github.com/virtualbeck/inherit/internal/redact"
+	"github.com/virtualbeck/inherit/internal/version"
 )
 
 const scanConcurrency = 8

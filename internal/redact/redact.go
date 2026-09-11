@@ -14,7 +14,7 @@ package redact
 import (
 	"encoding/json"
 
-	"github.com/virtualbeck/inherit-core/model"
+	"github.com/virtualbeck/inherit/model"
 )
 
 // Sentinel replaces a redacted value in inventory.json. The backend

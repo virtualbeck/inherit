@@ -1,4 +1,4 @@
-module github.com/virtualbeck/inherit-core
+module github.com/virtualbeck/inherit
 
 go 1.25.0
 

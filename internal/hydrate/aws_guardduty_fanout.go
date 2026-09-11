@@ -7,7 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/guardduty"
 	gdtypes "github.com/aws/aws-sdk-go-v2/service/guardduty/types"
-	"github.com/virtualbeck/inherit-core/model"
+	"github.com/virtualbeck/inherit/model"
 )
 
 func init() {

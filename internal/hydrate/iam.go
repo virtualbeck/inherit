@@ -10,7 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/accessanalyzer"
 	aatypes "github.com/aws/aws-sdk-go-v2/service/accessanalyzer/types"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
-	"github.com/virtualbeck/inherit-core/model"
+	"github.com/virtualbeck/inherit/model"
 )
 
 func init() {

@@ -5,7 +5,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
-	"github.com/virtualbeck/inherit-core/model"
+	"github.com/virtualbeck/inherit/model"
 )
 
 func init() {

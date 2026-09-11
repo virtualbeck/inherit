@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/virtualbeck/inherit-core/model"
+	"github.com/virtualbeck/inherit/model"
 )
 
 // Fanout expands one discovered resource into extra standalone resources, for

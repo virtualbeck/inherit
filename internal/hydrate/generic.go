@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/virtualbeck/inherit-core/internal/nameconv"
-	"github.com/virtualbeck/inherit-core/model"
-	"github.com/virtualbeck/inherit-core/tfschema"
+	"github.com/virtualbeck/inherit/internal/nameconv"
+	"github.com/virtualbeck/inherit/model"
+	"github.com/virtualbeck/inherit/tfschema"
 )
 
 // tagKeys are handled from the discovery inventory, never from the SDK payload.

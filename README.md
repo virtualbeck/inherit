@@ -1,4 +1,4 @@
-# inherit-core
+# inherit
 
 Inherited an AWS account that isn't infrastructure-as-code? This is the free,
 open-source half of **inherit**: it runs **on your machine**, discovers what's

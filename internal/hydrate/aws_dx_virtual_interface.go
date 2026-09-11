@@ -6,7 +6,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/directconnect"
-	"github.com/virtualbeck/inherit-core/model"
+	"github.com/virtualbeck/inherit/model"
 )
 
 func init() { register("aws_dx_private_virtual_interface", hydrateDXVirtualInterface) }

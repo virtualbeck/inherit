@@ -3,7 +3,7 @@ package discover
 import (
 	"testing"
 
-	"github.com/virtualbeck/inherit-core/model"
+	"github.com/virtualbeck/inherit/model"
 )
 
 func TestIsEphemeral(t *testing.T) {

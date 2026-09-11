@@ -1,5 +1,5 @@
 GO      ?= $(shell command -v go 2>/dev/null || echo $(HOME)/.local/go/bin/go)
-PKG     := github.com/virtualbeck/inherit-core
+PKG     := github.com/virtualbeck/inherit
 BIN     := inherit
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)

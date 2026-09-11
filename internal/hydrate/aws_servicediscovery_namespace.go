@@ -7,7 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	"github.com/aws/aws-sdk-go-v2/service/servicediscovery"
 	sdtypes "github.com/aws/aws-sdk-go-v2/service/servicediscovery/types"
-	"github.com/virtualbeck/inherit-core/model"
+	"github.com/virtualbeck/inherit/model"
 )
 
 func init() { register("aws_service_discovery_http_namespace", hydrateSDNamespace) }

@@ -9,7 +9,7 @@ import (
 	cw "github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	cwtypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	cwl "github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
-	"github.com/virtualbeck/inherit-core/model"
+	"github.com/virtualbeck/inherit/model"
 )
 
 func init() {

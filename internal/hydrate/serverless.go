@@ -10,7 +10,7 @@ import (
 	agw "github.com/aws/aws-sdk-go-v2/service/apigateway"
 	agw2 "github.com/aws/aws-sdk-go-v2/service/apigatewayv2"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
-	"github.com/virtualbeck/inherit-core/model"
+	"github.com/virtualbeck/inherit/model"
 )
 
 func init() {

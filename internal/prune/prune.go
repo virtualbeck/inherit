@@ -12,7 +12,7 @@ import (
 	"regexp"
 	"sort"
 
-	"github.com/virtualbeck/inherit-core/model"
+	"github.com/virtualbeck/inherit/model"
 )
 
 // Options controls a prune pass.

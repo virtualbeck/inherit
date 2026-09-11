@@ -13,7 +13,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/virtualbeck/inherit-core/internal/version"
+	"github.com/virtualbeck/inherit/internal/version"
 )
 
 func main() {

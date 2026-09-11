@@ -11,7 +11,7 @@ import (
 	dlmtypes "github.com/aws/aws-sdk-go-v2/service/dlm/types"
 	"github.com/aws/aws-sdk-go-v2/service/efs"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/virtualbeck/inherit-core/model"
+	"github.com/virtualbeck/inherit/model"
 )
 
 func init() {

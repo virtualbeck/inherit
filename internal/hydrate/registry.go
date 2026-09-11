@@ -8,8 +8,8 @@ import (
 	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/virtualbeck/inherit-core/model"
-	"github.com/virtualbeck/inherit-core/tfschema"
+	"github.com/virtualbeck/inherit/model"
+	"github.com/virtualbeck/inherit/tfschema"
 )
 
 // Hydrator fetches the full configuration of one resource and returns it as a

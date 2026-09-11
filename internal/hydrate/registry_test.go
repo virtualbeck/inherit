@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/virtualbeck/inherit-core/model"
+	"github.com/virtualbeck/inherit/model"
 )
 
 // hydrateRegistered exists specifically for gap-fillers, which run outside

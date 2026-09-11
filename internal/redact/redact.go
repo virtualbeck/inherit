@@ -5,15 +5,25 @@
 //
 // The fields covered are the ones that legitimately end up in generated
 // Terraform config but routinely hold secrets: Lambda env vars, EC2
-// user_data, ECS container env, and plain (non-SecureString) SSM parameter
-// values. Everything genuinely secret elsewhere (Secrets Manager values,
-// RDS master passwords, SSM SecureString, ...) is already never read or
-// already placeholdered by the hydrators.
+// user_data, and plain (non-SecureString) SSM parameter values. Everything
+// genuinely secret elsewhere (Secrets Manager values, RDS master passwords,
+// SSM SecureString, ...) is already never read or already placeholdered by
+// the hydrators.
+//
+// ECS container_definitions' environment[].value is deliberately NOT
+// covered: unlike the fields above, there's no reliable signal to tell a
+// real secret apart from ordinary plaintext config (log level, hostname,
+// feature flags) short of guessing -- and guessing wrong in either
+// direction is bad, either leaking a real secret or making every delivered
+// project unreadable. AWS itself never treats this field as sensitive (it's
+// plaintext in the live task definition to anyone with ecs:DescribeTaskDefinition;
+// the actually-encrypted path is secrets[], already left alone below). A
+// real secret placed in environment[] instead of secrets[] was already a
+// mistake made outside this tool, in the live AWS account, before inherit
+// ever saw it.
 package redact
 
 import (
-	"encoding/json"
-
 	"github.com/virtualbeck/inherit/model"
 )
 
@@ -54,8 +64,6 @@ func Split(inv *model.Inventory) []Secret {
 					r.Config[k] = Sentinel
 				}
 			}
-		case "aws_ecs_task_definition":
-			redactECSContainerEnv(*r, r.Config, add)
 		case "aws_ssm_parameter":
 			if t, _ := r.Config["type"].(string); t != "SecureString" {
 				if s, ok := r.Config["value"].(string); ok && s != "" && s != Sentinel {
@@ -109,58 +117,4 @@ func lambdaEnvVars(cfg map[string]any) map[string]any {
 		}
 	}
 	return nil
-}
-
-// redactECSContainerEnv parses the container_definitions JSON string, blanks
-// every container's environment[].value, and reserializes. The secrets[]
-// array (Secrets Manager / SSM ARN references, not values) is left alone.
-func redactECSContainerEnv(r model.Resource, cfg map[string]any, add func(model.Resource, string, string)) {
-	raw, ok := cfg["container_definitions"].(string)
-	if !ok || raw == "" {
-		return
-	}
-	var containers []map[string]any
-	if err := json.Unmarshal([]byte(raw), &containers); err != nil {
-		return
-	}
-	changed := false
-	for ci, c := range containers {
-		env, ok := c["environment"].([]any)
-		if !ok {
-			continue
-		}
-		for _, e := range env {
-			m, ok := e.(map[string]any)
-			if !ok {
-				continue
-			}
-			name, _ := m["name"].(string)
-			if s, ok := m["value"].(string); ok && s != Sentinel {
-				add(r, jsonPath("container_definitions", ci, name), s)
-				m["value"] = Sentinel
-				changed = true
-			}
-		}
-	}
-	if changed {
-		if b, err := json.Marshal(containers); err == nil {
-			cfg["container_definitions"] = string(b)
-		}
-	}
-}
-
-func jsonPath(field string, containerIdx int, name string) string {
-	return field + "[" + itoa(containerIdx) + "].environment." + name
-}
-
-func itoa(i int) string {
-	if i == 0 {
-		return "0"
-	}
-	var b []byte
-	for i > 0 {
-		b = append([]byte{byte('0' + i%10)}, b...)
-		i /= 10
-	}
-	return string(b)
 }

@@ -23,15 +23,22 @@ half that touches your account is open.
 ## Redaction
 
 A handful of fields legitimately end up in Terraform config but routinely hold
-secrets: Lambda environment variables, EC2 `user_data`, ECS container
-environment, and plain (non-`SecureString`) SSM parameter values. `scan`
-replaces these with a marker in `inventory.json` and writes the real values to
-a local `inventory.secrets.json` (auto-gitignored, never uploaded). The
-delivered Terraform uses `lifecycle { ignore_changes }` for them and ships a
-guide for wiring them back up.
+secrets: Lambda environment variables, EC2 `user_data`, and plain
+(non-`SecureString`) SSM parameter values. `scan` replaces these with a
+marker in `inventory.json` and writes the real values to a local
+`inventory.secrets.json` (auto-gitignored, never uploaded). The delivered
+Terraform uses `lifecycle { ignore_changes }` for them and ships a guide for
+wiring them back up.
 
 Secrets Manager values, RDS/Redshift master passwords, and SSM `SecureString`
 are never read in the first place.
+
+ECS container `environment[]` values are **not** redacted -- there's no
+reliable way to tell a real secret apart from ordinary plaintext config
+(log level, hostname, feature flags) there, and AWS itself never treats the
+field as sensitive (`secrets[]`, the actually-encrypted path, is untouched
+either way). If a real secret ended up in `environment[]` instead of
+`secrets[]`, that happened in the live account before `inherit` ever saw it.
 
 ## Installation
 

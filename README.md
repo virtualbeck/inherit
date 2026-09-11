@@ -7,7 +7,7 @@ in the account using **read-only AWS APIs only**, and writes a flat
 
 That file is the input to the inherit backend, which turns it into a working
 OpenTofu/Terraform project. **The backend is the paid product; this tool is
-not.** Everything here is auditable — the point of splitting it out is that the
+not.** Everything here is auditable. The point of splitting it out is that the
 half that touches your account is open.
 
 ## What it does and doesn't do
@@ -48,5 +48,5 @@ go build ./cmd/inherit
 
 ## License
 
-Apache-2.0 (`LICENSE`). The **inherit** name and branding are reserved —
+Apache-2.0 (`LICENSE`). The **inherit** name and branding are reserved;
 see `TRADEMARK.md`.

@@ -74,8 +74,7 @@ func submitCmd() *cobra.Command {
 		},
 	}
 	f := cmd.Flags()
-	f.StringVarP(&outDir, "out", "o", "", "the directory `inherit scan` wrote to")
-	_ = cmd.MarkFlagRequired("out")
+	f.StringVarP(&outDir, "out", "o", ".", "the directory `inherit scan` wrote to (default: current directory)")
 	return cmd
 }
 

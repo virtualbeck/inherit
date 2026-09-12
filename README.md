@@ -92,12 +92,15 @@ release.
 ## Usage
 
 ```sh
-inherit scan --profile my-readonly-profile --regions us-east-1
-inherit submit --out ./inherit-<account>
+inherit scan --profile my-readonly-profile --regions us-east-1 --out ./inherit-<account>
+cd ./inherit-<account> && inherit submit
 ```
 
-`submit` packages `inventory.tar.gz` in that same directory -- drop it on
-the site to preview your generated project and its price.
+`submit` defaults `--out` to the current directory, so it just needs to run
+from wherever `scan` wrote its output -- pass `--out` explicitly instead if
+you'd rather not `cd`. Either way it packages `inventory.tar.gz` in that
+directory; drop it on the site to preview your generated project and its
+price.
 
 `scan` is a point-in-time snapshot. If something in the account gets
 created, changed, or torn down after you scan but before you run

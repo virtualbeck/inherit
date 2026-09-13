@@ -1,0 +1,41 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "InheritReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "*:Describe*",
+        "*:List*",
+        "*:Get*",
+        "*:BatchGet*",
+        "*:Select",
+        "*:Lookup*",
+        "*:Scan",
+        "*:Search*",
+        "*:Query",
+        "*:Head*",
+        "*:Retrieve*",
+        "*:Preview*",
+        "*:Estimate*",
+        "*:Simulate*",
+        "*:Check*",
+        "sts:GetCallerIdentity",
+        "sts:AssumeRole"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "InheritDenySideEffectingReads",
+      "Effect": "Deny",
+      "Action": [
+        "iam:GenerateCredentialReport",
+        "iam:GenerateOrganizationsAccessReport",
+        "iam:GenerateServiceLastAccessedDetails",
+        "sts:GetFederationToken",
+        "sts:GetSessionToken"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

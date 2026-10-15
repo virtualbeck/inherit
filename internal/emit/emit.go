@@ -1,5 +1,5 @@
 // Package emit renders a hydrated inventory as OpenTofu/Terraform HCL. It is
-// driven by the provider schema (internal/tfschema), so every value lands as an
+// driven by the provider schema (tfschema), so every value lands as an
 // argument, a map, or a nested block exactly as the provider expects. The
 // output is valid by construction and needs no `tofu fmt` afterwards.
 package emit

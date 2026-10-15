@@ -1,6 +1,6 @@
-// Command genschema regenerates internal/tfschema/schema/aws.min.json.gz from a
+// Command genschema regenerates tfschema/schema/aws.min.json.gz from a
 // live `tofu`/`terraform providers schema -json` dump, with descriptions
-// stripped. Run from the repo root: go run ./internal/tfschema/cmd/genschema
+// stripped. Run from the repo root: go run ./tfschema/cmd/genschema
 package main
 
 import (
@@ -95,7 +95,7 @@ func run() error {
 	_, _ = zw.Write(blob)
 	_ = zw.Close()
 
-	dst := filepath.Join("internal", "tfschema", "schema", "aws.min.json.gz")
+	dst := filepath.Join("tfschema", "schema", "aws.min.json.gz")
 	if err := os.WriteFile(dst, gz.Bytes(), 0o644); err != nil {
 		return err
 	}

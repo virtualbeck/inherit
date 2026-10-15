@@ -6,5 +6,5 @@ every attribute's kind (attribute vs nested block), cty type, and
 required/optional/computed flags, the ground truth the emitter uses so the
 generated HCL is valid by construction.
 
-Regenerate with `go run ./internal/tfschema/cmd/genschema` (needs `tofu` or
-`terraform` on PATH). Current: AWS provider **v6.62.0**.
+Regenerate with `go run ./tfschema/cmd/genschema` (needs `tofu` or
+`terraform` on PATH). Current: AWS provider **v6.69.0**.

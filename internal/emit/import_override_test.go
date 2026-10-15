@@ -67,3 +67,37 @@ func TestWriteImportOverrides(t *testing.T) {
 	// must not panic or error
 	RemoveImportOverrides(paths)
 }
+
+// A for_each group's instances share one override block, and a write that
+// fails partway leaves no override behind (a stray one hides drift).
+func TestWriteImportOverridesDedupAndAtomic(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "modules", "network"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	imports := []ImportSpec{
+		{Addr: `module.network.aws_subnet.private["a"]`, Cat: "network", TFType: "aws_subnet", Name: "private"},
+		{Addr: `module.network.aws_subnet.private["b"]`, Cat: "network", TFType: "aws_subnet", Name: "private"},
+	}
+	if _, err := WriteImportOverrides(dir, imports); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(filepath.Join(dir, "modules", "network", "import_override.tf"))
+	if n := strings.Count(string(got), `resource "aws_subnet" "private"`); n != 1 {
+		t.Errorf("want 1 override block for the for_each group, got %d:\n%s", n, got)
+	}
+
+	// "zzz" sorts after "network" and has no module directory, so its write
+	// fails after network's succeeded.
+	imports = append(imports, ImportSpec{Addr: "module.zzz.aws_vpc.main", Cat: "zzz", TFType: "aws_vpc", Name: "main"})
+	paths, err := WriteImportOverrides(dir, imports)
+	if err == nil {
+		t.Fatal("expected an error writing into a missing module directory")
+	}
+	if len(paths) != 0 {
+		t.Errorf("paths on error = %v, want none", paths)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "modules", "network", "import_override.tf")); !os.IsNotExist(err) {
+		t.Errorf("network override left behind after a failed write (stat err: %v)", err)
+	}
+}

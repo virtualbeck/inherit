@@ -81,16 +81,7 @@ func runFastImport(ctx context.Context, r *tf.Runner, absOut string, imports []e
 		return nil
 	}
 
-	have, _ := r.StateList(ctx)
-	var pending []emit.ImportSpec
-	skipped := 0
-	for _, s := range imports {
-		if have[s.Addr] {
-			skipped++
-			continue
-		}
-		pending = append(pending, s)
-	}
+	pending, skipped := pendingImports(ctx, r, imports)
 	if len(pending) == 0 {
 		fmt.Fprintf(os.Stderr, "%s fast-import: nothing to do (%d already in state)\n", r.Name(), skipped)
 		return nil
@@ -119,6 +110,9 @@ func runFastImport(ctx context.Context, r *tf.Runner, absOut string, imports []e
 	fastDone := 0
 
 	for i := 0; i < len(pending); i += chunkSize {
+		if ctx.Err() != nil {
+			return ctx.Err() // interrupted: the deferred cleanup removes the overrides
+		}
 		end := min(i+chunkSize, len(pending))
 		chunk := pending[i:end]
 		label := fmt.Sprintf("%d-%d/%d", i+1, end, len(pending))
@@ -133,15 +127,14 @@ func runFastImport(ctx context.Context, r *tf.Runner, absOut string, imports []e
 		fmt.Fprintf(os.Stderr, "  chunk %s: imported %d\n", label, n)
 	}
 
+	var fallbackErr error
 	if len(fallback) > 0 {
 		fmt.Fprintf(os.Stderr, "%s import: %d resources need the classic (slower) path\n", r.Name(), len(fallback))
-		if err := runImports(ctx, r, fallback, classicConcurrency); err != nil {
-			return err
-		}
+		fallbackErr = runImports(ctx, r, fallback, classicConcurrency)
 	}
 
 	fmt.Fprintf(os.Stderr, "  fast-imported %d, already in state %d, fell back to classic import %d\n", fastDone, skipped, len(fallback))
-	return nil
+	return fallbackErr
 }
 
 // applyChunk runs the plan -> verify -> apply sequence for one chunk. On any

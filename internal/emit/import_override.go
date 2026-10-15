@@ -23,10 +23,27 @@ import (
 // silently stop reporting real drift for every resource they cover.
 //
 // Returns the file paths written, so the caller can remove exactly those
-// files afterward regardless of success or failure.
-func WriteImportOverrides(outDir string, imports []ImportSpec) ([]string, error) {
+// files afterward regardless of success or failure. On error nothing is left
+// behind: any file already written is removed before returning.
+//
+// A for_each group gets one override block, not one per instance: the block
+// addresses the resource, and ignore_changes applies to every instance.
+func WriteImportOverrides(outDir string, imports []ImportSpec) (paths []string, err error) {
+	defer func() {
+		if err != nil {
+			RemoveImportOverrides(paths)
+			paths = nil
+		}
+	}()
+
 	byCat := map[string][]ImportSpec{}
+	seen := map[[3]string]bool{}
 	for _, s := range imports {
+		k := [3]string{s.Cat, s.TFType, s.Name}
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
 		byCat[s.Cat] = append(byCat[s.Cat], s)
 	}
 
@@ -36,7 +53,6 @@ func WriteImportOverrides(outDir string, imports []ImportSpec) ([]string, error)
 	}
 	sort.Strings(cats)
 
-	var paths []string
 	for _, cat := range cats {
 		specs := byCat[cat]
 		sort.Slice(specs, func(i, j int) bool {
@@ -55,7 +71,7 @@ func WriteImportOverrides(outDir string, imports []ImportSpec) ([]string, error)
 		}
 
 		path := filepath.Join(outDir, "modules", cat, "import_override.tf")
-		if err := os.WriteFile(path, f.Bytes(), 0o644); err != nil {
+		if err = os.WriteFile(path, f.Bytes(), 0o644); err != nil {
 			return paths, err
 		}
 		paths = append(paths, path)

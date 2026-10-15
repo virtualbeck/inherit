@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	mathrand "math/rand/v2"
 	"os"
@@ -11,14 +12,20 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/spf13/cobra"
 	"github.com/virtualbeck/inherit/internal/emit"
 	"github.com/virtualbeck/inherit/internal/par"
 	"github.com/virtualbeck/inherit/internal/tf"
+	"github.com/zclconf/go-cty/cty"
 )
 
 const (
-	importConcurrency = 32
+	// Classic `import` holds the local state lock for its whole run, Read
+	// included, so parallel imports mostly queue on the lock: a few overlap
+	// process startup, more only add lock contention and provider memory.
+	importConcurrency = 4
 	fastImportChunk   = 40
 )
 
@@ -90,53 +97,122 @@ func adopt(ctx context.Context, dir, tfBin, mode string) error {
 	}
 	fmt.Fprintf(os.Stderr, "%s validate\n", name)
 	if err := runner.Validate(ctx); err != nil {
-		return fmt.Errorf("%s validate failed", name)
+		return fmt.Errorf("%s validate: %w", name, err)
 	}
 
+	// Failed imports don't stop the plan (it shows exactly what's still
+	// missing), but they do make the command fail once it has run.
+	var importErr error
 	switch mode {
 	case "fast-import":
-		if err := runFastImport(ctx, runner, absDir, imports, fastImportChunk, importConcurrency); err != nil {
-			return err
-		}
+		importErr = runFastImport(ctx, runner, absDir, imports, fastImportChunk, importConcurrency)
 	case "import":
-		if err := runImports(ctx, runner, imports, importConcurrency); err != nil {
-			return err
-		}
+		importErr = runImports(ctx, runner, imports, importConcurrency)
+	}
+	if ctx.Err() != nil {
+		return importErr
 	}
 
 	fmt.Fprintf(os.Stderr, "%s plan\n", name)
 	if err := runner.Plan(ctx); err != nil {
-		return fmt.Errorf("%s plan reported problems (see above)", name)
+		return errors.Join(importErr, fmt.Errorf("%s plan: %w (see above)", name, err))
+	}
+	if importErr != nil {
+		return importErr
 	}
 	fmt.Fprintf(os.Stderr, "\ndone. project: %s\n", absDir)
 	return nil
 }
 
-// importBlockRe matches one import {} block as emit writes it:
-//
-//	import {
-//	  to = module.<cat>.<type>.<name>["<key>"]
-//	  id = "<id>"
-//	}
-var importBlockRe = regexp.MustCompile(`(?s)import\s*\{\s*to\s*=\s*module\.([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)(?:\["([^"]*)"\])?\s*id\s*=\s*"([^"]*)"\s*\}`)
+// pendingImports drops the specs whose address is already in state, so a
+// re-run picks up where the last one stopped.
+func pendingImports(ctx context.Context, r *tf.Runner, specs []emit.ImportSpec) (pending []emit.ImportSpec, skipped int) {
+	have, _ := r.StateList(ctx)
+	for _, s := range specs {
+		if have[s.Addr] {
+			skipped++
+			continue
+		}
+		pending = append(pending, s)
+	}
+	return pending, skipped
+}
 
 // readImports pulls the import{} blocks emit wrote into imports.tf back out
-// as ImportSpecs, so import can run without a fresh generate.
+// as ImportSpecs, so import can run without a fresh generate. It parses the
+// file as HCL, so escaped IDs and for_each keys come back exactly as written;
+// a block it can't interpret is an error, never silently skipped.
 func readImports(dir string) ([]emit.ImportSpec, error) {
-	b, err := os.ReadFile(filepath.Join(dir, "imports.tf"))
+	path := filepath.Join(dir, "imports.tf")
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading imports.tf (run `inherit scan` first): %w", err)
 	}
+	f, diags := hclsyntax.ParseConfig(b, path, hcl.InitialPos)
+	if diags.HasErrors() {
+		return nil, diags
+	}
 	var specs []emit.ImportSpec
-	for _, m := range importBlockRe.FindAllStringSubmatch(string(b), -1) {
-		cat, typ, nm, key, id := m[1], m[2], m[3], m[4], m[5]
-		addr := "module." + cat + "." + typ + "." + nm
-		if key != "" {
-			addr += `["` + key + `"]`
+	for _, blk := range f.Body.(*hclsyntax.Body).Blocks {
+		if blk.Type != "import" {
+			continue
 		}
-		specs = append(specs, emit.ImportSpec{Addr: addr, ID: id, Cat: cat, TFType: typ, Name: nm})
+		spec, err := importSpec(blk)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", blk.DefRange(), err)
+		}
+		specs = append(specs, spec)
 	}
 	return specs, nil
+}
+
+// importSpec interprets one block shaped as emit writes it:
+//
+//	import {
+//	  to = module.<cat>.<type>.<name>["<key>"]   # key only for for_each
+//	  id = "<id>"
+//	}
+func importSpec(blk *hclsyntax.Block) (emit.ImportSpec, error) {
+	to, ok := blk.Body.Attributes["to"]
+	if !ok {
+		return emit.ImportSpec{}, fmt.Errorf("import block has no `to`")
+	}
+	idAttr, ok := blk.Body.Attributes["id"]
+	if !ok {
+		return emit.ImportSpec{}, fmt.Errorf("import block has no `id`")
+	}
+	idVal, diags := idAttr.Expr.Value(nil)
+	if diags.HasErrors() || idVal.Type() != cty.String || idVal.IsNull() {
+		return emit.ImportSpec{}, fmt.Errorf("import `id` must be a literal string")
+	}
+	trav, diags := hcl.AbsTraversalForExpr(to.Expr)
+	if diags.HasErrors() || len(trav) < 4 || len(trav) > 5 || trav.RootName() != "module" {
+		return emit.ImportSpec{}, fmt.Errorf("import `to` must be module.<category>.<type>.<name>[key]")
+	}
+	var parts [3]string
+	for i := range parts {
+		a, ok := trav[i+1].(hcl.TraverseAttr)
+		if !ok {
+			return emit.ImportSpec{}, fmt.Errorf("import `to` must be module.<category>.<type>.<name>[key]")
+		}
+		parts[i] = a.Name
+	}
+	cat, typ, name := parts[0], parts[1], parts[2]
+	key := ""
+	if len(trav) == 5 {
+		idx, ok := trav[4].(hcl.TraverseIndex)
+		if !ok || idx.Key.Type() != cty.String || idx.Key.IsNull() {
+			return emit.ImportSpec{}, fmt.Errorf("import `to` index must be a string key")
+		}
+		key = idx.Key.AsString()
+	}
+	return emit.ImportSpec{
+		Addr:   emit.ResourceAddr(cat, typ, name, key),
+		ID:     idVal.AsString(),
+		Cat:    cat,
+		TFType: typ,
+		Name:   name,
+	}, nil
 }
 
 // retryable matches known-transient failure signatures in `tofu import`
@@ -165,19 +241,11 @@ func importOne(ctx context.Context, r *tf.Runner, addr, id string) (string, erro
 	return out, err
 }
 
+// runImports imports each spec with classic `import`, and reports an error
+// if any of them failed or the run was interrupted.
 func runImports(ctx context.Context, r *tf.Runner, specs []emit.ImportSpec, concurrency int) error {
 	concurrency = max(concurrency, 1)
-	have, _ := r.StateList(ctx)
-
-	var pending []emit.ImportSpec
-	skipped := 0
-	for _, s := range specs {
-		if have[s.Addr] {
-			skipped++
-			continue
-		}
-		pending = append(pending, s)
-	}
+	pending, skipped := pendingImports(ctx, r, specs)
 	fmt.Fprintf(os.Stderr, "%s import (%d resources, state-only, up to %d at a time)\n", r.Name(), len(pending), concurrency)
 
 	var (
@@ -187,6 +255,9 @@ func runImports(ctx context.Context, r *tf.Runner, specs []emit.ImportSpec, conc
 		n      int
 	)
 	par.Each(pending, concurrency, func(s emit.ImportSpec) {
+		if ctx.Err() != nil {
+			return // interrupted: start nothing new
+		}
 		out, err := importOne(ctx, r, s.Addr, s.ID)
 		mu.Lock()
 		defer mu.Unlock()
@@ -202,5 +273,11 @@ func runImports(ctx context.Context, r *tf.Runner, specs []emit.ImportSpec, conc
 		}
 	})
 	fmt.Fprintf(os.Stderr, "  imported %d, already in state %d, failed %d\n", done, skipped, failed)
+	switch {
+	case ctx.Err() != nil:
+		return ctx.Err()
+	case failed > 0:
+		return fmt.Errorf("%d of %d imports failed (see above); re-run to retry just those", failed, len(pending))
+	}
 	return nil
 }

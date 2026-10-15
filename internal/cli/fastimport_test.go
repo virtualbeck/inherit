@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/virtualbeck/inherit/internal/emit"
@@ -154,7 +155,8 @@ resource "local_file" "b" {
 // a resource with no way to actually be imported (no import block; local_file
 // can't support one anyway) must never be silently created by the fast
 // path -- it must fall back to classic import (which also can't import it,
-// so it ends up reported as failed) rather than materialize on disk.
+// so it ends up reported as failed, and the run returns an error so the
+// command exits non-zero) rather than materialize on disk.
 func TestFastImportNeverCreatesAnUnimportableResource(t *testing.T) {
 	r := requireTF(t)
 	buildFixture(t, r)
@@ -173,8 +175,9 @@ resource "local_file" "ghost" {
 	imports := []emit.ImportSpec{
 		{Addr: "module.network.local_file.ghost", ID: "does-not-matter", Cat: "network", TFType: "local_file", Name: "ghost"},
 	}
-	if err := runFastImport(context.Background(), r, r.Dir, imports, 40, 4); err != nil {
-		t.Fatalf("runFastImport returned an error (should degrade to a reported failure, not a hard error): %v", err)
+	err := runFastImport(context.Background(), r, r.Dir, imports, 40, 4)
+	if err == nil || !strings.Contains(err.Error(), "1 of 1 imports failed") {
+		t.Fatalf("runFastImport error = %v, want the failed classic-fallback import reported", err)
 	}
 
 	if _, err := os.Stat(filepath.Join(r.Dir, "realfile", "ghost.txt")); !os.IsNotExist(err) {

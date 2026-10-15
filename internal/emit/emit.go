@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/hashicorp/hcl/v2"
@@ -62,6 +63,18 @@ type ImportSpec struct {
 	Cat    string
 	TFType string
 	Name   string
+}
+
+// ResourceAddr is the module-qualified address tofu/terraform accept on the
+// command line (import, -target): module.<cat>.<type>.<name>, plus
+// ["<key>"] for a for_each instance. The key is quoted, so any character in
+// it survives.
+func ResourceAddr(cat, tfType, name, key string) string {
+	addr := "module." + cat + "." + tfType + "." + name
+	if key != "" {
+		addr += "[" + strconv.Quote(key) + "]"
+	}
+	return addr
 }
 
 type placed struct {
@@ -469,10 +482,10 @@ func Write(inv model.Inventory, outDir string, opt Options) (Result, error) {
 			name = it.grp.name
 			to = append(to, hcl.TraverseAttr{Name: name},
 				hcl.TraverseIndex{Key: cty.StringVal(it.grpKey)})
-			addr = "module." + it.cat + "." + it.r.TFType + "." + name + `["` + it.grpKey + `"]`
+			addr = ResourceAddr(it.cat, it.r.TFType, name, it.grpKey)
 		} else {
 			to = append(to, hcl.TraverseAttr{Name: name})
-			addr = "module." + it.cat + "." + it.r.TFType + "." + name
+			addr = ResourceAddr(it.cat, it.r.TFType, name, "")
 		}
 		ib := imp.Body().AppendNewBlock("import", nil).Body()
 		ib.SetAttributeTraversal("to", to)

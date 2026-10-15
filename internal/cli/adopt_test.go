@@ -1,6 +1,12 @@
 package cli
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/hcl/v2/hclwrite"
+	"github.com/zclconf/go-cty/cty"
+)
 
 func TestRetryableRegex(t *testing.T) {
 	yes := []string{
@@ -52,5 +58,40 @@ import {
 	}
 	if specs[1].Addr != `module.compute.aws_subnet.private["us-east-1a"]` || specs[1].ID != "subnet-1" {
 		t.Errorf("spec 1 wrong: %+v", specs[1])
+	}
+}
+
+// IDs and for_each keys with characters HCL escapes ($${, quotes,
+// backslashes) must come back exactly, and a block of the wrong shape is an
+// error rather than silently dropped.
+func TestReadImportsEscapingAndShape(t *testing.T) {
+	dir := t.TempDir()
+	f := hclwrite.NewEmptyFile()
+	b := f.Body().AppendNewBlock("import", nil).Body()
+	b.SetAttributeTraversal("to", hcl.Traversal{
+		hcl.TraverseRoot{Name: "module"}, hcl.TraverseAttr{Name: "security"},
+		hcl.TraverseAttr{Name: "aws_iam_policy"}, hcl.TraverseAttr{Name: "p"},
+		hcl.TraverseIndex{Key: cty.StringVal(`we"ird\key`)},
+	})
+	b.SetAttributeValue("id", cty.StringVal(`arn:${x}:"q"\z`))
+	writeFile(t, dir+"/imports.tf", string(f.Bytes()))
+
+	specs, err := readImports(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(specs) != 1 {
+		t.Fatalf("got %d specs, want 1", len(specs))
+	}
+	if got, want := specs[0].ID, `arn:${x}:"q"\z`; got != want {
+		t.Errorf("ID = %q, want %q", got, want)
+	}
+	if got, want := specs[0].Addr, `module.security.aws_iam_policy.p["we\"ird\\key"]`; got != want {
+		t.Errorf("Addr = %s, want %s", got, want)
+	}
+
+	writeFile(t, dir+"/imports.tf", "import {\n  to = aws_vpc.main\n  id = \"vpc-1\"\n}\n")
+	if _, err := readImports(dir); err == nil {
+		t.Error("an import outside module.<category> should be an error, not skipped")
 	}
 }

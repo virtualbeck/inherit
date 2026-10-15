@@ -20,15 +20,23 @@ const (
 
 // gitignore keeps everything that can carry a live secret or is purely
 // local working state out of the generated project's history: the redacted
-// values, and tofu's state/plan files (import writes real attribute values,
-// secrets included, into terraform.tfstate).
+// values, tofu's state/plan files (import writes real attribute values,
+// secrets included, into terraform.tfstate), and what an interrupted
+// `import --fast` could leave behind (an override hiding all drift, and its
+// plan scratch directory).
 const gitignore = `inventory.secrets.json
 .terraform/
 *.tfstate
 *.tfstate.*
 *.tfplan
 crash.log
+import_override.tf
+.fastimport-*/
 `
+
+func writeGitignore(dir string) error {
+	return os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(gitignore), 0o644)
+}
 
 // genFlags are the emit options shared by scan and generate.
 type genFlags struct {
@@ -74,7 +82,7 @@ func generate(inv model.Inventory, dir string, g genFlags) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(gitignore), 0o644); err != nil {
+	if err := writeGitignore(dir); err != nil {
 		return err
 	}
 	fmt.Fprintf(os.Stderr, "  %d resources across %d modules (%s), %d import blocks\n",

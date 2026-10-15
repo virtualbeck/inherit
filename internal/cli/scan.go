@@ -73,7 +73,7 @@ func scanCmd() *cobra.Command {
 			fmt.Fprintf(os.Stderr, "  output     %s\n\n", absOut)
 
 			if !yes {
-				ok, err := confirm("Proceed? [y/N] ")
+				ok, err := confirm(ctx, "Proceed? [y/N] ")
 				if err != nil {
 					return err
 				}
@@ -143,6 +143,10 @@ func scanCmd() *cobra.Command {
 			secrets := redact.Split(&inv)
 
 			if err := os.MkdirAll(absOut, 0o755); err != nil {
+				return err
+			}
+			// before the secrets file exists, so it's never unprotected
+			if err := writeGitignore(absOut); err != nil {
 				return err
 			}
 			if err := writeJSON(filepath.Join(absOut, inventoryFile), inv, 0o644); err != nil {

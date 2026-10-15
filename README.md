@@ -30,6 +30,24 @@ inherit import inherit-<account>                # bring every resource into loca
 - Nothing is sent anywhere else. Your inventory, your secrets and your
   generated project stay on your disk.
 
+## How it works
+
+1. **Discover.** `resourcegroupstaggingapi:GetResources` swept across every
+   enabled region in parallel, plus gap-fillers for what that API never
+   returns.
+2. **Hydrate.** A per-resource-type fetcher calls the specific
+   `Describe`/`Get` operations for full configuration.
+3. **Prune.** Drop unused, default resources from the report, when unused.
+4. **Redact.** As described under [Secrets](#secrets).
+5. **Generate.** The AWS provider's own JSON schema tells the
+   generator every attribute's kind and type, and output is written with
+   `hclwrite`, so the HCL is valid by construction.
+6. **Import.**
+   a. `inherit import` runs one classic `import` per resource, safe but slow.
+   b. `inherit import --fast` batches instead, never applies a batch blind.
+
+More detail on the internals: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ## Installation
 
 ### macOS / Linux
@@ -136,70 +154,18 @@ inherit-123456789012/
 
 ### Secrets
 
-A handful of fields legitimately end up in Terraform config but routinely hold
-secrets: Lambda environment variables, EC2 / launch template user data, plain
-(non-`SecureString`) SSM parameter values, CloudFormation stack parameters,
-and AWS access key IDs anywhere they turn up in resource config (IAM users
-tagged with their own key ID are common). `scan` moves their values into
-`inventory.secrets.json` and leaves a marker in `inventory.json`. The one
-exception is an `aws_iam_access_key` resource's own ID: that is the key ID,
-and it's what `import` needs, so it appears in `inventory.json` and
-`imports.tf` (never a secret key; those are never readable). `imports.tf`
-can be deleted once everything is imported.
-
 The generated project never contains those values. Each affected attribute is
 listed under the resource's `lifecycle { ignore_changes = [...] }`, so the
 project plans clean on day one, and `UNMANAGED_FIELDS.md` lists every one with
 the ARN to look up in `inventory.secrets.json` when you're ready to wire it to
-a secret store.
-
-Secrets Manager values, RDS/Redshift master passwords and SSM `SecureString`
-values are never read in the first place. ECS container `environment[]`
-values are **not** redacted: nothing reliably tells a secret apart from plain
-config there, and AWS doesn't treat that field as sensitive either
-(`secrets[]` is the encrypted path).
+a secret store. 
+- Secrets Manager values, RDS/Redshift master passwords and SSM `SecureString`
+  values are never read in the first place. 
+- ECS container `environment[]` values are **not** redacted: nothing reliably
+  tells a secret apart from plain config
 
 Note that `terraform.tfstate` holds real attribute values once you import.
 It's gitignored; treat it as sensitive.
-
-## How it works
-
-1. **Discover.** `resourcegroupstaggingapi:GetResources` swept across every
-   enabled region in parallel, plus gap-fillers for what that API never
-   returns (IAM roles/users/groups/policies, AWS Config recorders, ...).
-   Point-in-time artifacts are skipped by default.
-2. **Hydrate.** A per-resource-type fetcher calls the specific
-   `Describe`/`Get` operations for full configuration (363 Terraform
-   resource types; see [docs/COVERAGE.md](docs/COVERAGE.md)). Children
-   discovered off a parent (SNS subscriptions, S3 bucket sub-resources, IAM
-   policy attachments, ...) are fanned out from it.
-3. **Prune.** Resources AWS creates everywhere regardless of use (an
-   unreferenced default VPC and its default SG/route table/NACL, per-region
-   setting singletons) are dropped, then any region left with nothing real.
-4. **Redact.** As described under [Secrets](#secrets).
-5. **Generate.** The AWS provider's own JSON schema (bundled, v6.69) tells the
-   generator every attribute's kind and type, and output is written with
-   `hclwrite`, so the HCL is valid by construction. Resources are laid out as
-   a root module calling one child module per category. Literal IDs and ARNs
-   that point at another discovered resource become references, wired
-   through module inputs/outputs when they cross a category. External IDs
-   become variables, account IDs and regions inside ARNs become `data`
-   lookups, a tag identical on every resource moves into `default_tags`, and
-   runs of 3+ identical resources fold into one `for_each` block. Resources
-   outside the default region get an aliased provider, since the per-resource
-   `region` argument isn't consulted during import.
-6. **Import.** `inherit import` runs one classic `import` per resource,
-   always safe but slow at scale. `inherit import --fast` batches instead,
-   and never applies a batch blind. For each batch it (a) pins every resource
-   to `lifecycle { ignore_changes = all }` via a transient override file, (b)
-   plans the batch to a file, (c) requires every change in that plan,
-   dependencies included, to be exactly a no-op import, and only then (d)
-   applies that exact saved plan. Batches hold up to 200 resources; a batch
-   that fails is split in half and retried, so one problem resource only
-   sends a handful of its neighbours to classic import. The override files
-   are removed when the run ends, success or failure.
-
-More detail on the internals: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Known limitations
 
@@ -232,9 +198,6 @@ The demo is a [VHS](https://github.com/charmbracelet/vhs) tape that drives
 `demo/bin/inherit`, a stand-in that replays recorded output for a simulated
 account (`demo/replay/`), so it needs no AWS access. The tape's `Sleep`s set
 the pacing to match real runs.
-
-Releases are cut by pushing a `v*` tag; the release workflow builds every
-platform and publishes the archives with `SHA256SUMS`.
 
 ## License
 

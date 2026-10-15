@@ -2,10 +2,12 @@ package hydrate
 
 import (
 	"context"
+	"slices"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	aas "github.com/aws/aws-sdk-go-v2/service/applicationautoscaling"
 	aastypes "github.com/aws/aws-sdk-go-v2/service/applicationautoscaling/types"
+	"github.com/virtualbeck/inherit/internal/par"
 	"github.com/virtualbeck/inherit/model"
 )
 
@@ -20,81 +22,108 @@ func init() { registerGapFiller(gapFillAppAutoscaling) }
 // for, already errors out cleanly per-page below and just gets skipped.
 var aasNamespaces = aastypes.ServiceNamespace("").Values()
 
+// aasConcurrency is how many namespaces are queried at once per region.
+const aasConcurrency = 2
+
 func gapFillAppAutoscaling(ctx context.Context, c *Clients, region string) ([]model.Resource, error) {
 	cl := aas.NewFromConfig(c.Cfg(region))
+	// Namespaces are independent and most are empty or not permitted, so
+	// query several at once rather than ~15 round trips back to back -- but
+	// not all at once: they share one regional endpoint whose rate limit is
+	// low, and a burst gets throttled into exhausted retries (measured).
+	// Each writes its own slot; the result keeps namespace order.
+	perNS := make([][]model.Resource, len(aasNamespaces))
+	idx := make([]int, len(aasNamespaces))
+	for i := range idx {
+		idx[i] = i
+	}
+	par.Each(idx, aasConcurrency, func(i int) {
+		perNS[i] = aasNamespaceResources(ctx, cl, region, aasNamespaces[i])
+	})
+	return slices.Concat(perNS...), nil
+}
+
+// aasNamespaceResources lists one namespace's scalable targets and scaling
+// policies; a namespace that errors (not enabled, not permitted) yields none.
+func aasNamespaceResources(ctx context.Context, cl *aas.Client, region string, ns aastypes.ServiceNamespace) []model.Resource {
 	acct := ""
 	var out []model.Resource
-
-	for _, ns := range aasNamespaces {
-		tp := aas.NewDescribeScalableTargetsPaginator(cl, &aas.DescribeScalableTargetsInput{ServiceNamespace: ns})
-		for tp.HasMorePages() {
-			page, err := tp.NextPage(ctx)
-			if err != nil {
-				break // namespace not enabled / not permitted; move on
-			}
-			for _, t := range page.ScalableTargets {
-				sn := string(t.ServiceNamespace)
-				rid := aws.ToString(t.ResourceId)
-				dim := string(t.ScalableDimension)
-				cfg := map[string]any{
-					"service_namespace":  sn,
-					"resource_id":        rid,
-					"scalable_dimension": dim,
-				}
-				if t.MinCapacity != nil {
-					cfg["min_capacity"] = *t.MinCapacity
-				}
-				if t.MaxCapacity != nil {
-					cfg["max_capacity"] = *t.MaxCapacity
-				}
-				if v := aws.ToString(t.ScalableTargetARN); v != "" {
-					if tags, terr := cl.ListTagsForResource(ctx, &aas.ListTagsForResourceInput{ResourceARN: &v}); terr == nil && len(tags.Tags) > 0 {
-						cfg["tags"] = tags.Tags
-					}
-				}
-				id := sn + "/" + rid + "/" + dim
-				out = append(out, model.Resource{
-					Service: "application-autoscaling", Type: "scalable-target",
-					TFType: "aws_appautoscaling_target", Region: region, Account: acct,
-					ID: id, ImportID: id, Config: cfg,
-				})
-			}
+	tp := aas.NewDescribeScalableTargetsPaginator(cl, &aas.DescribeScalableTargetsInput{ServiceNamespace: ns})
+	for tp.HasMorePages() {
+		page, err := tp.NextPage(ctx)
+		if err != nil {
+			break // namespace not enabled / not permitted; move on
 		}
-
-		pp := aas.NewDescribeScalingPoliciesPaginator(cl, &aas.DescribeScalingPoliciesInput{ServiceNamespace: ns})
-		for pp.HasMorePages() {
-			page, err := pp.NextPage(ctx)
-			if err != nil {
-				break
+		for _, t := range page.ScalableTargets {
+			sn := string(t.ServiceNamespace)
+			rid := aws.ToString(t.ResourceId)
+			dim := string(t.ScalableDimension)
+			cfg := map[string]any{
+				"service_namespace":  sn,
+				"resource_id":        rid,
+				"scalable_dimension": dim,
 			}
-			for _, p := range page.ScalingPolicies {
-				sn := string(p.ServiceNamespace)
-				rid := aws.ToString(p.ResourceId)
-				dim := string(p.ScalableDimension)
-				name := aws.ToString(p.PolicyName)
-				cfg := map[string]any{
-					"name":               name,
-					"service_namespace":  sn,
-					"resource_id":        rid,
-					"scalable_dimension": dim,
-					"policy_type":        string(p.PolicyType),
-				}
-				if tt := p.TargetTrackingScalingPolicyConfiguration; tt != nil {
-					cfg["target_tracking_scaling_policy_configuration"] = aasTargetTracking(tt)
-				}
-				if ss := p.StepScalingPolicyConfiguration; ss != nil {
-					cfg["step_scaling_policy_configuration"] = aasStepScaling(ss)
-				}
-				id := sn + "/" + rid + "/" + dim + "/" + name
-				out = append(out, model.Resource{
-					Service: "application-autoscaling", Type: "scaling-policy",
-					TFType: "aws_appautoscaling_policy", Region: region, Account: acct,
-					ID: id, ImportID: id, Config: cfg,
-				})
+			if t.MinCapacity != nil {
+				cfg["min_capacity"] = *t.MinCapacity
 			}
+			if t.MaxCapacity != nil {
+				cfg["max_capacity"] = *t.MaxCapacity
+			}
+			if v := aws.ToString(t.ScalableTargetARN); v != "" {
+				if tags, terr := cl.ListTagsForResource(ctx, &aas.ListTagsForResourceInput{ResourceARN: &v}); terr == nil && len(tags.Tags) > 0 {
+					cfg["tags"] = tags.Tags
+				}
+			}
+			id := sn + "/" + rid + "/" + dim
+			out = append(out, model.Resource{
+				Service: "application-autoscaling", Type: "scalable-target",
+				TFType: "aws_appautoscaling_target", Region: region, Account: acct,
+				ID: id, ImportID: id, Config: cfg,
+			})
 		}
 	}
-	return out, nil
+
+	// A scaling policy can't exist without a registered scalable target (AWS
+	// requires the target first and deletes its policies with it), so a
+	// namespace with no targets has no policies: skip the second call. Most
+	// namespaces are empty, and this API's rate limit is low.
+	if len(out) == 0 {
+		return nil
+	}
+
+	pp := aas.NewDescribeScalingPoliciesPaginator(cl, &aas.DescribeScalingPoliciesInput{ServiceNamespace: ns})
+	for pp.HasMorePages() {
+		page, err := pp.NextPage(ctx)
+		if err != nil {
+			break
+		}
+		for _, p := range page.ScalingPolicies {
+			sn := string(p.ServiceNamespace)
+			rid := aws.ToString(p.ResourceId)
+			dim := string(p.ScalableDimension)
+			name := aws.ToString(p.PolicyName)
+			cfg := map[string]any{
+				"name":               name,
+				"service_namespace":  sn,
+				"resource_id":        rid,
+				"scalable_dimension": dim,
+				"policy_type":        string(p.PolicyType),
+			}
+			if tt := p.TargetTrackingScalingPolicyConfiguration; tt != nil {
+				cfg["target_tracking_scaling_policy_configuration"] = aasTargetTracking(tt)
+			}
+			if ss := p.StepScalingPolicyConfiguration; ss != nil {
+				cfg["step_scaling_policy_configuration"] = aasStepScaling(ss)
+			}
+			id := sn + "/" + rid + "/" + dim + "/" + name
+			out = append(out, model.Resource{
+				Service: "application-autoscaling", Type: "scaling-policy",
+				TFType: "aws_appautoscaling_policy", Region: region, Account: acct,
+				ID: id, ImportID: id, Config: cfg,
+			})
+		}
+	}
+	return out
 }
 
 func aasTargetTracking(t *aastypes.TargetTrackingScalingPolicyConfiguration) map[string]any {

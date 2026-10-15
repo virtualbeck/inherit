@@ -5,6 +5,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	"github.com/virtualbeck/inherit/internal/par"
 	"github.com/virtualbeck/inherit/model"
 )
 
@@ -79,20 +80,32 @@ func gapFillSSMExtras(ctx context.Context, c *Clients, region string) ([]model.R
 		token = page.NextToken
 	}
 
-	for _, id := range knownSSMServiceSettingIDs {
-		settingID := id
+	// independent single reads: a few at once rather than 10 back to back.
+	// Each writes its own slot, so the output keeps the list's order.
+	settings := make([]*model.Resource, len(knownSSMServiceSettingIDs))
+	idx := make([]int, len(knownSSMServiceSettingIDs))
+	for i := range idx {
+		idx[i] = i
+	}
+	par.Each(idx, 4, func(i int) {
+		settingID := knownSSMServiceSettingIDs[i]
 		s, err := cl.GetServiceSetting(ctx, &ssm.GetServiceSettingInput{SettingId: &settingID})
 		if err != nil || s.ServiceSetting == nil || aws.ToString(s.ServiceSetting.Status) != "Customized" {
-			continue
+			return
 		}
-		out = append(out, model.Resource{
+		settings[i] = &model.Resource{
 			Service: "ssm", Type: "servicesetting", TFType: "aws_ssm_service_setting",
 			Region: region, ID: settingID, ImportID: settingID,
 			Config: map[string]any{
 				"setting_id":    settingID,
 				"setting_value": aws.ToString(s.ServiceSetting.SettingValue),
 			},
-		})
+		}
+	})
+	for _, r := range settings {
+		if r != nil {
+			out = append(out, *r)
+		}
 	}
 
 	return out, nil

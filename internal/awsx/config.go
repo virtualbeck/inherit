@@ -5,9 +5,12 @@ package awsx
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/smithy-go/middleware"
@@ -24,6 +27,11 @@ import (
 func Load(ctx context.Context, region, profile string) (aws.Config, error) {
 	opts := []func(*config.LoadOptions) error{
 		config.WithAPIOptions([]func(*middleware.Stack) error{readOnlyGuard}),
+		config.WithHTTPClient(sharedHTTPClient()),
+		// A throttled call that runs out of retries is a resource silently
+		// missing from the scan (most fillers skip on error), so back off
+		// longer than the SDK's default 3 attempts. Reads are idempotent.
+		config.WithRetryMaxAttempts(retryMaxAttempts),
 	}
 	if region != "" {
 		opts = append(opts, config.WithRegion(region))
@@ -36,6 +44,23 @@ func Load(ctx context.Context, region, profile string) (aws.Config, error) {
 		return aws.Config{}, fmt.Errorf("load AWS config: %w", err)
 	}
 	return cfg, nil
+}
+
+// retryMaxAttempts is the SDK's per-call attempt budget (default 3).
+const retryMaxAttempts = 10
+
+// sharedHTTPClient is one connection pool for every service client derived
+// from the config. Left to the SDK, each NewFromConfig clones the transport
+// (a fresh pool), so every call paid a new TCP + TLS handshake: several round
+// trips to a distant region before the request even goes out. Frozen, so
+// service clients use it as-is instead of cloning it. The read timeout is
+// the SDK's own planned default (it ships disabled), so a stalled connection
+// can't hang a scan.
+func sharedHTTPClient() aws.HTTPClient {
+	return awshttp.NewBuildableClient().
+		WithTransportOptions(func(t *http.Transport) { t.MaxIdleConnsPerHost = 64 }).
+		WithReadTimeout(5 * time.Minute).
+		Freeze()
 }
 
 // Identity is the resolved caller, from sts:GetCallerIdentity.

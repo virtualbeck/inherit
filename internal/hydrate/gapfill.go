@@ -26,6 +26,12 @@ var gapFillers []GapFiller
 // downstream to catch it.
 var globalGapFillers []GapFiller
 
+// gapFillConcurrency bounds the (region x filler) jobs. It's higher than
+// hydration's limit because the jobs are almost all different service
+// endpoints in different regions, each with its own API rate limit, and
+// nearly every one is a single cheap call: the run is round-trip bound.
+const gapFillConcurrency = 64
+
 func registerGapFiller(f GapFiller)       { gapFillers = append(gapFillers, f) }
 func registerGlobalGapFiller(f GapFiller) { globalGapFillers = append(globalGapFillers, f) }
 

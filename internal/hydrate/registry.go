@@ -339,7 +339,7 @@ func Run(ctx context.Context, cfg aws.Config, inv *model.Inventory, opt Options)
 
 	// gap-fillers discover + hydrate resource types the tagging API can't see
 	// (application auto scaling, ...); they arrive with TFType and Config set.
-	st.Errors = append(st.Errors, runGapFillers(ctx, clients, inv, opt.Concurrency)...)
+	st.Errors = append(st.Errors, runGapFillers(ctx, clients, inv, gapFillConcurrency)...)
 
 	type job struct {
 		r *model.Resource

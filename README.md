@@ -1,6 +1,6 @@
 # inherit
 
-Inherited an AWS account that isn't infrastructure-as-code? Sorry! Start here.
+Inherited an AWS account that isn't infrastructure-as-code? Start here.
 
 `inherit` is one small binary that runs **on your machine**, discovers what's
 in an AWS account using **read-only AWS APIs only**, and writes a working

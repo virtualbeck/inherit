@@ -24,14 +24,21 @@ build:
 dev:
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o bin/$(BIN)-linux-amd64 ./cmd/inherit
 
+# one archive per platform (the binary is ~90 MB raw, mostly AWS SDK service
+# clients, and ~4x smaller compressed): .tar.gz, or .zip for windows. Each
+# holds the binary plus LICENSE and README.md.
 dist:
-	@mkdir -p dist
+	@rm -rf dist && mkdir -p dist
 	@$(foreach p,$(PLATFORMS), \
 		os=$(word 1,$(subst /, ,$(p))); arch=$(word 2,$(subst /, ,$(p))); \
-		ext=$(if $(filter windows,$(word 1,$(subst /, ,$(p)))),.exe,); \
-		out=dist/$(BIN)_$(VERSION)_$${os}_$${arch}$${ext}; \
-		echo "-> $${out}"; \
-		CGO_ENABLED=0 GOOS=$${os} GOARCH=$${arch} $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $${out} ./cmd/inherit || exit 1; \
+		name=$(BIN)_$(VERSION)_$${os}_$${arch}; stage=dist/$${name}; \
+		exe=$(BIN)$(if $(filter windows,$(word 1,$(subst /, ,$(p)))),.exe,); \
+		echo "-> $${name}"; \
+		mkdir -p $${stage} && cp LICENSE README.md $${stage}/ && \
+		CGO_ENABLED=0 GOOS=$${os} GOARCH=$${arch} $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $${stage}/$${exe} ./cmd/inherit || exit 1; \
+		if [ $${os} = windows ]; then (cd $${stage} && zip -q -9 ../$${name}.zip *); \
+		else tar -C $${stage} -czf dist/$${name}.tar.gz .; fi; \
+		rm -rf $${stage}; \
 	)
 	@cd dist && sha256sum inherit_* > SHA256SUMS
 

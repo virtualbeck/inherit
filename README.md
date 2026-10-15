@@ -40,17 +40,18 @@ release's `SHA256SUMS`, and installs it to `~/.local/bin/inherit`: no
 `sudo`, nothing written outside your home directory. Re-run any time to
 update. `INHERIT_INSTALL_DIR` overrides the install directory.
 
-Or grab a binary from [Releases](https://github.com/virtualbeck/inherit/releases)
-(`inherit_<version>_<os>_<arch>`, `<os>` = `darwin` | `linux`, `<arch>` =
-`amd64` | `arm64`) and verify it against `SHA256SUMS`. On macOS the binary is
-unsigned, so the first run needs `xattr -d com.apple.quarantine <path>` or an
-approval in **System Settings > Privacy & Security**.
+Or grab an archive from [Releases](https://github.com/virtualbeck/inherit/releases)
+(`inherit_<version>_<os>_<arch>.tar.gz`, `<os>` = `darwin` | `linux`,
+`<arch>` = `amd64` | `arm64`), verify it against `SHA256SUMS`, and put the
+`inherit` binary inside on your `PATH`. On macOS the binary is unsigned, so
+the first run needs `xattr -d com.apple.quarantine <path>` or an approval in
+**System Settings > Privacy & Security**.
 
 ### Windows
 
-Download `inherit_<version>_windows_<arch>.exe` from
-[Releases](https://github.com/virtualbeck/inherit/releases). It isn't
-code-signed, so SmartScreen flags it on first run (**More info > Run
+Download `inherit_<version>_windows_<arch>.zip` from
+[Releases](https://github.com/virtualbeck/inherit/releases) and extract
+`inherit.exe`. It isn't code-signed, so SmartScreen flags it on first run (**More info > Run
 anyway**).
 
 ### From source
@@ -206,7 +207,7 @@ make schema      # re-bundle the latest hashicorp/aws 6.x provider schema
 ```
 
 Releases are cut by pushing a `v*` tag; the release workflow builds every
-platform and publishes the binaries with `SHA256SUMS`.
+platform and publishes the archives with `SHA256SUMS`.
 
 ## License
 

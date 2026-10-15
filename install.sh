@@ -44,7 +44,7 @@ if [ -z "$TAG" ]; then
 	exit 1
 fi
 
-ASSET="${BIN}_${TAG}_${OS}_${ARCH}"
+ASSET="${BIN}_${TAG}_${OS}_${ARCH}.tar.gz"
 BASE_URL="https://github.com/$REPO/releases/download/$TAG"
 
 WORK=$(mktemp -d)
@@ -58,9 +58,10 @@ echo "verifying checksum ..." >&2
 ( cd "$WORK" && grep " $ASSET\$" SHA256SUMS | sha256sum -c - ) 2>/dev/null ||
 	( cd "$WORK" && grep " $ASSET\$" SHA256SUMS | shasum -a 256 -c - )
 
+tar -xzf "$WORK/$ASSET" -C "$WORK" "./$BIN"
 mkdir -p "$INSTALL_DIR"
-chmod +x "$WORK/$ASSET"
-mv "$WORK/$ASSET" "$INSTALL_DIR/$BIN"
+chmod +x "$WORK/$BIN"
+mv "$WORK/$BIN" "$INSTALL_DIR/$BIN"
 
 echo "installed $INSTALL_DIR/$BIN ($TAG)" >&2
 

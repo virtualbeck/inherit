@@ -5,8 +5,7 @@ Inherited an AWS account that isn't infrastructure-as-code? Start here.
 `inherit` is one small binary that runs **on your machine**, discovers what's
 in an AWS account using **read-only AWS APIs only**, and writes a working
 OpenTofu/Terraform project describing it, ready to `init` / `validate` /
-`plan` / `import`. Free and open source (Apache-2.0), no account, no upload,
-no backend.
+`plan` / `import`.
 
 ```sh
 inherit scan --profile my-readonly-profile     # discover + generate ./inherit-<account>/

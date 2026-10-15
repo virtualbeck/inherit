@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
+	"maps"
 	"sort"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -529,9 +530,7 @@ func hydrateVPNConnection(ctx context.Context, c *Clients, r model.Resource) (ma
 		cfg["vpn_gateway_id"] = id
 	}
 	if tuns := vpnTunnelConfig(aws.ToString(v.CustomerGatewayConfiguration), v.Options); tuns != nil {
-		for k, val := range tuns {
-			cfg[k] = val
-		}
+		maps.Copy(cfg, tuns)
 	}
 	if o := v.Options; o != nil {
 		if o.StaticRoutesOnly != nil {

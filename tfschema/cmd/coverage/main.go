@@ -75,8 +75,8 @@ func serviceOf(tf string) string {
 			return p
 		}
 	}
-	if i := strings.IndexByte(name, '_'); i >= 0 {
-		return name[:i]
+	if before, _, ok := strings.Cut(name, "_"); ok {
+		return before
 	}
 	return name
 }

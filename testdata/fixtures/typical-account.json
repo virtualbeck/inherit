@@ -1,0 +1,86 @@
+{
+  "tool_version": "ci-fixture",
+  "account": "999999999999",
+  "partition": "aws",
+  "regions": ["us-east-1"],
+  "resources": [
+    {
+      "arn": "arn:aws:ec2:us-east-1:999999999999:vpc/vpc-0aaa11112222bbbb1",
+      "service": "ec2", "type": "vpc", "tf_type": "aws_default_vpc",
+      "region": "us-east-1", "account": "999999999999", "id": "vpc-0aaa11112222bbbb1",
+      "config": {
+        "enable_dns_hostnames": true,
+        "enable_dns_support": true,
+        "enable_network_address_usage_metrics": false
+      }
+    },
+    {
+      "arn": "arn:aws:ec2:us-east-1:999999999999:security-group/sg-0bbb22223333cccc2",
+      "service": "ec2", "type": "security-group", "tf_type": "aws_security_group",
+      "region": "us-east-1", "account": "999999999999", "id": "sg-0bbb22223333cccc2",
+      "config": {
+        "name": "ssh-access",
+        "description": "ssh from the office",
+        "vpc_id": "vpc-0aaa11112222bbbb1"
+      }
+    },
+    {
+      "arn": "arn:aws:ec2:us-east-1:999999999999:security-group-rule/sgr-0ccc33334444dddd3",
+      "service": "ec2", "type": "security-group-rule", "tf_type": "aws_vpc_security_group_ingress_rule",
+      "region": "us-east-1", "account": "999999999999", "id": "sgr-0ccc33334444dddd3",
+      "config": {
+        "security_group_id": "sg-0bbb22223333cccc2",
+        "cidr_ipv4": "198.51.100.42/32",
+        "from_port": 22,
+        "to_port": 22,
+        "ip_protocol": "tcp",
+        "description": "ssh from the office"
+      }
+    },
+    {
+      "arn": "arn:aws:ec2:us-east-1:999999999999:instance/i-0ddd44445555eeee4",
+      "service": "ec2", "type": "instance", "tf_type": "aws_instance",
+      "region": "us-east-1", "account": "999999999999", "id": "i-0ddd44445555eeee4",
+      "config": {
+        "ami": "ami-0eeee5555f6667778",
+        "instance_type": "t3.micro",
+        "subnet_id": "subnet-0fff5555666677778",
+        "vpc_security_group_ids": ["sg-0bbb22223333cccc2"]
+      }
+    },
+    {
+      "arn": "arn:aws:iam::999999999999:group/Admins",
+      "service": "iam", "type": "group", "tf_type": "aws_iam_group",
+      "account": "999999999999", "id": "Admins",
+      "config": { "name": "Admins", "path": "/" }
+    },
+    {
+      "arn": "arn:aws:iam::999999999999:group-policy/Admins/AdministratorAccess",
+      "service": "iam", "type": "group-policy", "tf_type": "aws_iam_group_policy_attachment",
+      "account": "999999999999", "id": "Admins/arn:aws:iam::aws:policy/AdministratorAccess",
+      "config": { "group": "Admins", "policy_arn": "arn:aws:iam::aws:policy/AdministratorAccess" }
+    },
+    {
+      "arn": "arn:aws:iam::999999999999:group-policy/Deploy/AmazonS3FullAccess",
+      "service": "iam", "type": "group-policy", "tf_type": "aws_iam_group_policy_attachment",
+      "account": "999999999999", "id": "Deploy/arn:aws:iam::aws:policy/AmazonS3FullAccess",
+      "config": { "group": "Deploy", "policy_arn": "arn:aws:iam::aws:policy/AmazonS3FullAccess" }
+    },
+    {
+      "arn": "arn:aws:iam::999999999999:group-policy/ReadOnly/ReadOnlyAccess",
+      "service": "iam", "type": "group-policy", "tf_type": "aws_iam_group_policy_attachment",
+      "account": "999999999999", "id": "ReadOnly/arn:aws:iam::aws:policy/ReadOnlyAccess",
+      "config": { "group": "ReadOnly", "policy_arn": "arn:aws:iam::aws:policy/ReadOnlyAccess" }
+    },
+    {
+      "arn": "arn:aws:iam::999999999999:policy/backup-role-999999999999",
+      "service": "iam", "type": "policy", "tf_type": "aws_iam_policy",
+      "account": "999999999999", "id": "backup-role-999999999999",
+      "config": {
+        "name": "backup-role-999999999999",
+        "path": "/",
+        "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"backup:*\",\"Resource\":\"*\"}]}"
+      }
+    }
+  ]
+}

@@ -240,8 +240,8 @@ func fanoutLambda(ctx context.Context, c *Clients, parent model.Resource) ([]mod
 // unqualified function ARN ("...function:name").
 func lambdaArnQualifier(arn, functionName string) string {
 	suffix := ":" + functionName + ":"
-	if i := strings.Index(arn, suffix); i >= 0 {
-		return arn[i+len(suffix):]
+	if _, after, ok := strings.Cut(arn, suffix); ok {
+		return after
 	}
 	return ""
 }

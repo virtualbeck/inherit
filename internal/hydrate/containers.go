@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -221,9 +222,7 @@ func hydrateECSService(ctx context.Context, c *Clients, r model.Resource) (map[s
 		if dcfg.MinimumHealthyPercent != nil {
 			m["deployment_minimum_healthy_percent"] = *dcfg.MinimumHealthyPercent
 		}
-		for k, v := range m {
-			cfg[k] = v
-		}
+		maps.Copy(cfg, m)
 	}
 	if len(s.PlacementConstraints) > 0 {
 		var pcs []any

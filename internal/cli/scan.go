@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"encoding/json"
@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/virtualbeck/inherit/internal/awsx"
@@ -27,12 +28,18 @@ func scanCmd() *cobra.Command {
 		servicesInclude  []string
 		includeEphemeral bool
 		includeDefaults  bool
+		gen              genFlags
 		debug            bool
 		yes              bool
 	)
 	cmd := &cobra.Command{
 		Use:   "scan",
-		Short: "Discover the account and write inventory.json (+ inventory.secrets.json, local only)",
+		Short: "Discover the account (read-only) and generate the OpenTofu/Terraform project",
+		Long: "Discover the account using read-only AWS APIs only, then write the project:\n" +
+			"  inventory.json          what was found (secrets redacted)\n" +
+			"  inventory.secrets.json  the redacted values (local only, gitignored)\n" +
+			"  *.tf, modules/          the generated OpenTofu/Terraform project\n\n" +
+			"Next: `inherit plan <dir>`, then `inherit import <dir>`.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 
@@ -52,7 +59,7 @@ func scanCmd() *cobra.Command {
 				}
 			}
 			if out == "" {
-				out = "inherit-" + id.Account
+				out = defaultOutDir(id.Account)
 			}
 			absOut, _ := filepath.Abs(out)
 
@@ -111,7 +118,7 @@ func scanCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			inv.ToolVersion = version.String()
+			inv.ToolVersion = version.Version
 			fmt.Fprintf(os.Stderr, "  %d hydrated, %d awaiting a hydrator, %d unmapped types\n",
 				st.Hydrated, sum(st.NoHydrator), len(st.Unmapped))
 			if debug {
@@ -138,37 +145,47 @@ func scanCmd() *cobra.Command {
 			if err := os.MkdirAll(absOut, 0o755); err != nil {
 				return err
 			}
-			invPath := filepath.Join(absOut, "inventory.json")
-			if err := writeJSON(invPath, inv, 0o644); err != nil {
+			if err := writeJSON(filepath.Join(absOut, inventoryFile), inv, 0o644); err != nil {
 				return err
 			}
-			secPath := filepath.Join(absOut, "inventory.secrets.json")
-			if err := writeJSON(secPath, secrets, 0o600); err != nil {
+			if err := writeJSON(filepath.Join(absOut, secretsFile), secrets, 0o600); err != nil {
 				return err
 			}
-			if err := os.WriteFile(filepath.Join(absOut, ".gitignore"), []byte("inventory.secrets.json\n"), 0o644); err != nil {
-				return err
+			if len(secrets) > 0 {
+				fmt.Fprintf(os.Stderr, "  %d secret values redacted into %s (local only, gitignored)\n", len(secrets), secretsFile)
 			}
 
-			fmt.Fprintf(os.Stderr, "\nwrote %s\n", invPath)
-			if len(secrets) > 0 {
-				fmt.Fprintf(os.Stderr, "wrote %s  (%d values redacted from inventory.json; stays local, never uploaded)\n", secPath, len(secrets))
+			if err := generate(inv, absOut, gen); err != nil {
+				return err
 			}
-			fmt.Fprintf(os.Stderr, "\nnext: inherit submit --out %s\n", absOut)
+			fmt.Fprintf(os.Stderr, "\nnext: inherit plan %s\n", relOrAbs(absOut))
 			return nil
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(&profile, "profile", "", "AWS profile (default: AWS_PROFILE, then \"default\")")
 	f.StringSliceVar(&regions, "regions", nil, "regions to scan (default: all enabled)")
-	f.StringVarP(&out, "out", "o", "", "output directory (default: ./inherit-<account>)")
+	f.StringVarP(&out, "out", "o", "", "output directory (default: ./inherit-<account>, timestamped if it already exists)")
 	f.StringSliceVar(&servicesExclude, "services-exclude", nil, "AWS services or service:type to skip")
 	f.StringSliceVar(&servicesInclude, "services-include", nil, "scan ONLY these AWS services")
 	f.BoolVar(&includeEphemeral, "include-ephemeral", false, "keep snapshots / AMIs / backups (skipped by default)")
 	f.BoolVar(&includeDefaults, "include-defaults", false, "keep AWS-created default VPCs/SGs and per-region setting singletons, and every region (pruned by default)")
+	gen.register(f)
 	f.BoolVar(&debug, "debug", false, "verbose diagnostics")
 	f.BoolVarP(&yes, "yes", "y", false, "skip the confirmation prompt")
 	return cmd
+}
+
+// defaultOutDir is ./inherit-<account>, or a unix-timestamped sibling when
+// that already exists: re-generating into a prior run's directory can leave
+// stale terraform.tfstate / .terraform/ behind that no longer match this
+// run's resource addresses. An explicit --out is always used as given.
+func defaultOutDir(account string) string {
+	dir := "inherit-" + account
+	if _, err := os.Stat(dir); err == nil {
+		dir = fmt.Sprintf("%s-%d", dir, time.Now().Unix())
+	}
+	return dir
 }
 
 func firstNonEmpty(ss []string) string {
@@ -194,4 +211,17 @@ func writeJSON(path string, v any, mode os.FileMode) error {
 		return err
 	}
 	return os.WriteFile(path, append(b, '\n'), mode)
+}
+
+// relOrAbs shortens dir to a ./-relative path when it's under the working
+// directory, for copy-pasteable "next:" hints.
+func relOrAbs(dir string) string {
+	wd, err := os.Getwd()
+	if err != nil {
+		return dir
+	}
+	if rel, err := filepath.Rel(wd, dir); err == nil && !strings.HasPrefix(rel, "..") {
+		return rel
+	}
+	return dir
 }

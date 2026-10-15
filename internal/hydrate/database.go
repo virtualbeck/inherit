@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"strings"
 
@@ -598,9 +599,7 @@ func hydrateElastiCacheRG(ctx context.Context, c *Clients, r model.Resource) (ma
 	if err != nil {
 		return nil, err
 	}
-	for k, v := range elastiCacheRGExtras(g) {
-		cfg[k] = v
-	}
+	maps.Copy(cfg, elastiCacheRGExtras(g))
 	return cfg, nil
 }
 
@@ -981,8 +980,7 @@ func hydrateRDSClusterParamGroup(ctx context.Context, c *Clients, r model.Resour
 		// interfaces/TGW peering attachments found in earlier rounds. A
 		// DBClusterParameterGroupNotFoundFault here means it's not an RDS
 		// group at all; try Neptune before giving up.
-		var nf *rdstypes.DBClusterParameterGroupNotFoundFault
-		if !errors.As(err, &nf) {
+		if _, ok := errors.AsType[*rdstypes.DBClusterParameterGroupNotFoundFault](err); !ok {
 			return nil, err
 		}
 		return hydrateNeptuneClusterParamGroup(ctx, c, r)

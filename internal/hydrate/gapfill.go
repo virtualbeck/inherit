@@ -43,9 +43,7 @@ func runGapFillers(ctx context.Context, c *Clients, inv *model.Inventory) []erro
 		add  []model.Resource
 	)
 	run := func(region string, f GapFiller) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			res, err := f(ctx, c, region)
 			mu.Lock()
 			defer mu.Unlock()
@@ -54,7 +52,7 @@ func runGapFillers(ctx context.Context, c *Clients, inv *model.Inventory) []erro
 				return
 			}
 			add = append(add, res...)
-		}()
+		})
 	}
 	for _, region := range inv.Regions {
 		for _, f := range gapFillers {

@@ -154,7 +154,6 @@ func Sweep(ctx context.Context, cfg aws.Config, opt Options) (model.Inventory, i
 	)
 
 	for _, region := range opt.Regions {
-		region := region
 		wg.Add(1)
 		sem <- struct{}{}
 		go func() {

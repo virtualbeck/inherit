@@ -195,7 +195,6 @@ func fanoutEKS(ctx context.Context, c *Clients, parent model.Resource) ([]model.
 			// schema needs.
 			var pias []any
 			for _, assocID := range d.Addon.PodIdentityAssociations {
-				assocID := assocID
 				pd, perr := cl.DescribePodIdentityAssociation(ctx, &eks.DescribePodIdentityAssociationInput{
 					ClusterName: &name, AssociationId: &assocID,
 				})

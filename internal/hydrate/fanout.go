@@ -46,7 +46,6 @@ func runFanout(ctx context.Context, c *Clients, inv *model.Inventory, concurrenc
 		errs     []error
 	)
 	for _, j := range jobs {
-		j := j
 		wg.Add(1)
 		sem <- struct{}{}
 		go func() {

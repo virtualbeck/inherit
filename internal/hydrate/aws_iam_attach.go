@@ -3,6 +3,7 @@ package hydrate
 import (
 	"context"
 	"net/url"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
@@ -74,15 +75,16 @@ func fanoutUser(ctx context.Context, c *Clients, parent model.Resource) ([]model
 	}
 	if g, err := cl.ListGroupsForUser(ctx, &iam.ListGroupsForUserInput{UserName: &name}); err == nil && len(g.Groups) > 0 {
 		var groups []any
-		imp := name
+		var imp strings.Builder
+		imp.WriteString(name)
 		for _, grp := range g.Groups {
 			gn := aws.ToString(grp.GroupName)
 			groups = append(groups, gn)
-			imp += "/" + gn
+			imp.WriteString("/" + gn)
 		}
 		kids = append(kids, model.Resource{
 			Service: "iam", Type: "user-group-membership", TFType: "aws_iam_user_group_membership",
-			Account: parent.Account, ID: name, ImportID: imp,
+			Account: parent.Account, ID: name, ImportID: imp.String(),
 			Config: map[string]any{"user": name, "groups": groups},
 		})
 	}

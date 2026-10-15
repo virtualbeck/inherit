@@ -2,6 +2,7 @@ package hydrate
 
 import (
 	"context"
+	"maps"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -198,9 +199,7 @@ func fanoutSNSSubscriptions(ctx context.Context, c *Clients, parent model.Resour
 			"endpoint":  aws.ToString(s.Endpoint),
 		}
 		if attrs, err := cl.GetSubscriptionAttributes(ctx, &sns.GetSubscriptionAttributesInput{SubscriptionArn: &arn}); err == nil {
-			for k, v := range attrsToConfig(attrs.Attributes, sch) {
-				cfg[k] = v
-			}
+			maps.Copy(cfg, attrsToConfig(attrs.Attributes, sch))
 		}
 		// confirmation_timeout_in_minutes / endpoint_auto_confirms are pure
 		// provider directives for the (already-past) subscribe call; AWS has

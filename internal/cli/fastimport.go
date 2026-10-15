@@ -118,6 +118,9 @@ func runFastImport(ctx context.Context, r *tf.Runner, absOut string, imports []e
 		label := fmt.Sprintf("%d-%d/%d", i+1, end, len(pending))
 
 		n, err := applyChunk(ctx, r, planDir, i/chunkSize, chunk)
+		if err != nil && ctx.Err() != nil {
+			return ctx.Err() // interrupted mid-chunk: not a fallback case
+		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "  ! chunk %s: %v -- falling back to classic import for this chunk\n", label, err)
 			fallback = append(fallback, chunk...)

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Replays demo/replay/<cmd>.txt; "@@" waits for Enter.
+set -euo pipefail
+f="$(dirname "$0")/../replay/${1:-}.txt"
+[[ -f $f ]] || { echo "error: no replay for '${1:-}'" >&2; exit 1; }
+while IFS= read -r line; do
+  case $line in
+    '@@') read -rs </dev/tty ;;
+    '@@prompt '*) printf '%s' "${line#@@prompt }"; read -r </dev/tty ;;
+    *) printf '%s\n' "$line" ;;
+  esac
+done <"$f"

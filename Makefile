@@ -13,7 +13,7 @@ LDFLAGS := -s -w \
 
 PLATFORMS ?= linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 
-.PHONY: all build dev dist test integration vet fmt lint coverage schema
+.PHONY: all build dev dist test integration vet fmt lint coverage schema demo
 
 all: vet test build
 
@@ -67,3 +67,21 @@ coverage:
 # re-bundles the latest hashicorp/aws 6.x provider schema (needs tofu/terraform)
 schema:
 	$(GO) run ./tfschema/cmd/genschema
+
+VHS_IMAGE    ?= ghcr.io/charmbracelet/vhs:v0.12.1
+ALPINE_IMAGE ?= alpine:3.22
+DEMO_RUN     := docker run --rm -e HOME=/tmp -v "$(CURDIR)":/vhs -w /vhs
+DEMO_USER    := $(shell id -u):$(shell id -g)
+
+# renders demo/demo.tape (simulated account) to docs/ and site/, then
+# shrinks the GIF ~70%: drop duplicate frames, remap onto the theme's
+# 16 colors (demo/palette.gif), gifsicle -O3
+demo:
+	$(DEMO_RUN) -u $(DEMO_USER) $(VHS_IMAGE) demo/demo.tape
+	$(DEMO_RUN) -u $(DEMO_USER) --entrypoint ffmpeg $(VHS_IMAGE) -y -v error -i docs/demo.gif \
+		-filter_complex "mpdecimate=hi=64:lo=64:frac=0,split[a][b];[a]palettegen=reserve_transparent=0[p];[b][p]paletteuse=dither=none" \
+		-fps_mode vfr demo/dedup.gif
+	$(DEMO_RUN) --network host $(ALPINE_IMAGE) sh -c 'apk add -q --no-cache gifsicle && \
+		gifsicle --use-colormap demo/palette.gif -O3 demo/dedup.gif -o docs/demo.gif && \
+		chown $(DEMO_USER) docs/demo.gif && rm demo/dedup.gif'
+	@ls -l docs/demo.gif site/demo.mp4 site/demo.webm

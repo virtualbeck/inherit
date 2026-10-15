@@ -13,6 +13,10 @@ inherit plan   inherit-<account>                # tofu init + validate + plan
 inherit import inherit-<account>                # bring every resource into local state
 ```
 
+![inherit scanning, planning and importing a simulated AWS account](docs/demo.gif)
+
+<sub>A simulated account (999999999999), paced to real timings. Source: [`demo/demo.tape`](demo/demo.tape).</sub>
+
 ## What it does and doesn't do
 
 - `inherit scan` makes **no network calls except read-only AWS APIs**
@@ -219,9 +223,15 @@ make lint        # golangci-lint
 make dist        # release archives for linux/darwin/windows x amd64/arm64 in dist/
 make coverage    # regenerate docs/COVERAGE.md from the hydrator registry
 make schema      # re-bundle the latest hashicorp/aws 6.x provider schema
+make demo        # re-render the demo GIF/video with VHS (needs docker)
 ```
 
 The website is `site/index.html`, published by GitHub Pages on every change.
+
+The demo is a [VHS](https://github.com/charmbracelet/vhs) tape that drives
+`demo/bin/inherit`, a stand-in that replays recorded output for a simulated
+account (`demo/replay/`), so it needs no AWS access. The tape's `Sleep`s set
+the pacing to match real runs.
 
 Releases are cut by pushing a `v*` tag; the release workflow builds every
 platform and publishes the archives with `SHA256SUMS`.

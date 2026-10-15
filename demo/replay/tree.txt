@@ -1,0 +1,45 @@
+inherit-999999999999
+├── backend.tf
+├── imports.tf
+├── inventory.json
+├── inventory.secrets.json
+├── main.tf
+├── modules
+│   ├── compute
+│   │   ├── main.tf
+│   │   ├── README.md
+│   │   └── variables.tf
+│   ├── dns
+│   │   ├── main.tf
+│   │   ├── README.md
+│   │   └── variables.tf
+│   ├── integration
+│   │   ├── main.tf
+│   │   ├── README.md
+│   │   ├── variables.tf
+│   │   └── versions.tf
+│   ├── network
+│   │   ├── main.tf
+│   │   ├── outputs.tf
+│   │   ├── README.md
+│   │   └── variables.tf
+│   ├── observability
+│   │   ├── main.tf
+│   │   ├── README.md
+│   │   └── variables.tf
+│   ├── security
+│   │   ├── locals.tf
+│   │   ├── main.tf
+│   │   ├── README.md
+│   │   └── variables.tf
+│   └── storage
+│       ├── main.tf
+│       ├── README.md
+│       ├── variables.tf
+│       └── versions.tf
+├── providers.tf
+├── README.md
+├── terraform.tfstate
+└── versions.tf
+
+9 directories, 34 files

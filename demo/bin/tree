@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Stand-in tree: replays demo/replay/tree.txt.
+exec "$(dirname "$0")/inherit" tree

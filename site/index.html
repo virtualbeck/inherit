@@ -43,6 +43,10 @@ pre.hcl .c { color: var(--muted); }
 .file { font: 0.78rem ui-monospace, Menlo, Consolas, monospace; color: var(--muted); margin: 0 0 4px; }
 ul { padding-left: 20px; margin: 0 0 14px; }
 li { margin-bottom: 6px; }
+video.demo { display: block; width: 100%; max-width: 1200px; height: auto; border-radius: 8px; background: var(--term-bg); margin: 0 0 6px; }
+.caption { font-size: 0.85rem; color: var(--muted); margin: 0 0 10px; }
+details { margin: 0 0 16px; }
+summary { cursor: pointer; color: var(--muted); font-size: 0.9rem; margin-bottom: 8px; }
 .links { display: flex; gap: 18px; flex-wrap: wrap; margin: 4px 0 0; }
 footer { padding: 20px clamp(20px, 5vw, 72px); border-top: 1px solid var(--line); color: var(--muted); font-size: 0.9rem; display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; justify-content: space-between; }
 footer img { display: block; height: 20px; width: auto; }
@@ -59,16 +63,26 @@ footer img { display: block; height: 20px; width: auto; }
 <p class="tagline">Inherited an AWS account that isn't infrastructure-as-code? Start here.</p>
 <p class="lede">One open-source binary. It runs on your machine, reads your account with read-only APIs, and writes a Terraform/OpenTofu project you can <code>plan</code> and <code>import</code>. Nothing is uploaded anywhere.</p>
 
-<pre class="term"><span class="p">$ </span>inherit scan --profile readonly
-<span class="d">discovering ... found 41 resources across 17 regions
-hydrating ...
-generating ... 25 resources across 3 modules, 34 import blocks</span>
+<video class="demo" autoplay loop muted playsinline controls width="1200" height="960" aria-label="inherit scanning, planning and importing a simulated AWS account">
+  <source src="demo.webm" type="video/webm">
+  <source src="demo.mp4" type="video/mp4">
+</video>
+<p class="caption">A simulated account, paced to real timings.</p>
 
-<span class="p">$ </span>inherit plan inherit-123456789012
-<span class="ok">Plan: 34 to import, 0 to add, 0 to change, 0 to destroy.</span>
+<details>
+<summary>As text</summary>
+<pre class="term"><span class="p">$ </span>inherit scan --profile demo
+<span class="d">found 207 resources across 17 regions
+  pruned 155 default + 34 singleton resources
+  18 resources across 2 regions kept
+  16 resources across 7 modules, 18 import blocks</span>
 
-<span class="p">$ </span>inherit import --fast inherit-123456789012
+<span class="p">$ </span>inherit plan inherit-999999999999
+<span class="ok">Plan: 18 to import, 0 to add, 0 to change, 0 to destroy.</span>
+
+<span class="p">$ </span>inherit import --fast inherit-999999999999
 <span class="ok">No changes. Your infrastructure matches the configuration.</span></pre>
+</details>
 
 <div class="links">
   <a href="https://github.com/virtualbeck/inherit">GitHub</a>

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>inherit: AWS account to OpenTofu</title>
+<title>inherit</title>
 <meta name="description" content="Turn a hand-built AWS account into a working OpenTofu/Terraform project. One open-source binary, read-only, runs on your machine.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23d97706'/%3E%3Cpath d='M5 4v8M8 4v8M11 4v8' stroke='white' stroke-width='1.6'/%3E%3C/svg%3E">
 <style>
@@ -24,9 +24,9 @@ body {
   margin: 0; background: var(--bg); color: var(--fg);
   font: 17px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
-main { max-width: 760px; margin: 0 auto; padding: 56px 20px 40px; }
-h1 { font-size: 2.1rem; line-height: 1.2; margin: 0 0 12px; letter-spacing: -0.01em; }
-h1 .name { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: var(--accent); }
+main { padding: 56px clamp(20px, 5vw, 72px) 40px; }
+h1 { font: 700 2.6rem/1.1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: var(--accent); margin: 0 0 6px; letter-spacing: -0.02em; }
+.tagline { font-size: 1.3rem; font-weight: 600; margin: 0 0 14px; }
 h2 { font-size: 1.15rem; margin: 48px 0 12px; }
 p { margin: 0 0 14px; }
 .lede { font-size: 1.15rem; color: var(--muted); margin-bottom: 28px; }
@@ -44,13 +44,14 @@ pre.hcl .c { color: var(--muted); }
 ul { padding-left: 20px; margin: 0 0 14px; }
 li { margin-bottom: 6px; }
 .links { display: flex; gap: 18px; flex-wrap: wrap; margin: 4px 0 0; }
-footer { max-width: 760px; margin: 0 auto; padding: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.9rem; }
+footer { padding: 20px clamp(20px, 5vw, 72px); border-top: 1px solid var(--line); color: var(--muted); font-size: 0.9rem; }
 </style>
 </head>
 <body>
 <main>
 
-<h1><span class="name">inherit</span>: turn a hand-built AWS account into a working OpenTofu project</h1>
+<h1>inherit</h1>
+<p class="tagline">Hand-built AWS account in, OpenTofu project out.</p>
 <p class="lede">One open-source binary. It runs on your machine, reads your account with read-only APIs, and writes a Terraform/OpenTofu project you can <code>plan</code> and <code>import</code>. Nothing is uploaded anywhere.</p>
 
 <pre class="term"><span class="p">$ </span>inherit scan --profile readonly

@@ -11,6 +11,7 @@ internal/redact     moves secret values out of the inventory
 internal/emit       inventory -> HCL project (schema-driven, hclwrite)
 internal/tf         thin tofu/terraform subprocess driver
 internal/nameconv   SDK field name -> schema attribute name (snake-casing, acronyms)
+internal/par        bounded concurrency (par.Each) for every worker pool
 model               the inventory.json schema (Inventory, Resource)
 tfschema            the bundled hashicorp/aws provider schema + its loader
 ```
@@ -32,6 +33,11 @@ re-runs `emit` from it offline.
   resource to `ignore_changes = all`, plans each batch to a file, requires
   every resulting change to be exactly a no-op import, and only then applies
   that saved plan; otherwise the batch falls back to classic import.
+- **Interrupts clean up.** Ctrl-C/SIGTERM cancel the root context
+  (`internal/cli/root.go`) instead of killing the process, so the override
+  files are always removed. `internal/tf` runs tofu in its own process group
+  and forwards one interrupt with a 30s grace before killing it (a second
+  SIGINT makes tofu exit immediately, which is what this avoids).
 - **No secrets in `.tf` files.** `internal/redact` replaces covered values
   with a sentinel and writes the real ones to `inventory.secrets.json`;
   `internal/emit/unmanaged.go` turns every attribute holding the sentinel into

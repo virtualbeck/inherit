@@ -74,8 +74,9 @@ inherit import     plan, plus state-only import of every resource (--fast: batch
 
 Authenticate however you normally do (env vars, SSO, a profile): `inherit`
 reads the standard AWS SDK chain and shows you the account, identity and
-regions it resolved before doing anything. A read-only role is enough;
-[docs/iam-policy.json](docs/iam-policy.json) is a minimal policy.
+regions it resolved before doing anything. A read-only identity is enough:
+the AWS-managed `ReadOnlyAccess` policy, or
+[docs/iam-policy.json](docs/iam-policy.json) (read-only verbs only).
 
 ```sh
 inherit scan                                     # every enabled region, confirm prompt
@@ -87,12 +88,22 @@ inherit scan --services-include ec2,s3           # scan ONLY these services
 inherit scan --include-ephemeral                 # keep snapshots / AMIs / backups
 inherit scan --include-defaults                  # keep default VPCs + per-region singletons
 inherit scan -e prod                             # label the example state key in backend.tf
+inherit scan --for-each=false                    # one block per resource, no for_each folding
+inherit scan --debug                             # per-region counts + every hydration error
 
 inherit plan inherit-123456789012
 inherit import inherit-123456789012              # one `import` per resource, Read-only
 inherit import --fast inherit-123456789012       # far faster on hundreds of resources
 inherit generate inherit-123456789012            # re-render after upgrading inherit
+inherit plan --tf-bin terraform inherit-123456789012   # use terraform instead of tofu
 ```
+
+`plan` and `import` prefer `tofu` and fall back to `terraform`. `import`
+exits non-zero if any resource failed to import (it still runs the final
+`plan`, which shows exactly what's missing); re-running it picks up where it
+left off, skipping everything already in state. Ctrl-C is safe: tofu is
+interrupted gracefully and `--fast` removes its temporary override files
+before exiting.
 
 Each run is one account into one directory: `./inherit-<account>` by default,
 with a unix-timestamp suffix if that already exists (re-generating into a
@@ -109,13 +120,13 @@ import non-existent remote object" for something deleted in between).
 inherit-123456789012/
   inventory.json          what was discovered (secrets redacted)
   inventory.secrets.json  the redacted values (gitignored; never commit it)
-  .gitignore              secrets, state, plan files, .terraform/
+  .gitignore              secrets, state and plan files, .terraform/
   versions.tf             required OpenTofu/provider versions
   providers.tf            the aws provider, plus one alias per extra region
   main.tf                 the root module: every category module, wired together
   imports.tf              one import {} block per resource
   backend.tf              local state by default, with a commented S3 skeleton
-  UNMANAGED_FIELDS.md     attributes left to ignore_changes (redacted secrets)
+  UNMANAGED_FIELDS.md     attributes left to ignore_changes (only if anything was redacted)
   README.md
   modules/<category>/     compute, network, database, storage, security, ...
 ```
@@ -155,7 +166,7 @@ It's gitignored; treat it as sensitive.
    returns (IAM roles/users/groups/policies, AWS Config recorders, ...).
    Point-in-time artifacts are skipped by default.
 2. **Hydrate.** A per-resource-type fetcher calls the specific
-   `Describe`/`Get` operations for full configuration (~200 Terraform
+   `Describe`/`Get` operations for full configuration (363 Terraform
    resource types; see [docs/COVERAGE.md](docs/COVERAGE.md)). Children
    discovered off a parent (SNS subscriptions, S3 bucket sub-resources, IAM
    policy attachments, ...) are fanned out from it.
@@ -205,7 +216,7 @@ make             # vet + test + build ./bin/inherit
 make test        # go test ./...
 make integration # + real tofu init/validate runs (needs tofu/terraform + network)
 make lint        # golangci-lint
-make dist        # cross-compile linux/darwin/windows x amd64/arm64 into dist/
+make dist        # release archives for linux/darwin/windows x amd64/arm64 in dist/
 make coverage    # regenerate docs/COVERAGE.md from the hydrator registry
 make schema      # re-bundle the latest hashicorp/aws 6.x provider schema
 ```

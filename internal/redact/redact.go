@@ -1,7 +1,8 @@
-// Package redact strips plaintext secrets out of a hydrated inventory before
-// it leaves the user's machine. What's removed here is written to a local
-// inventory.secrets.json instead (see Split); the uploaded inventory.json
-// carries only the Sentinel in their place.
+// Package redact strips plaintext secrets out of a hydrated inventory, so
+// neither inventory.json nor the generated .tf files ever carry them. What's
+// removed here is written to a local, gitignored inventory.secrets.json
+// instead (see Split); inventory.json carries only the Sentinel in their
+// place, and internal/emit leaves those attributes to ignore_changes.
 //
 // The fields covered are the ones that legitimately end up in generated
 // Terraform config but routinely hold secrets: Lambda env vars, EC2
@@ -30,7 +31,7 @@
 // field-specific rules above would ever look at. The paired secret is
 // never read by this tool either way -- an access key ID alone can't
 // authenticate -- but it's still a real, live credential's identifier and
-// has no business leaving the machine.
+// has no business in a generated project or its git history.
 package redact
 
 import (
@@ -44,7 +45,7 @@ import (
 // an IAM user's own key) or ASIA (temporary, STS-issued).
 var accessKeyRe = regexp.MustCompile(`^(?:AKIA|ASIA)[A-Z0-9]{16}$`)
 
-// Sentinel replaces a redacted value in inventory.json. The backend
+// Sentinel replaces a redacted value in inventory.json. internal/emit
 // recognizes it and emits the field with lifecycle.ignore_changes.
 const Sentinel = "__inherit_redacted__"
 

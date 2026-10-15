@@ -1,50 +1,31 @@
 # inherit
 
-Inherited an AWS account that isn't infrastructure-as-code? This is the free,
-open-source half of **inherit**: it runs **on your machine**, discovers what's
-in the account using **read-only AWS APIs only**, and writes a flat
-`inventory.json` describing it.
+Inherited an AWS account that isn't infrastructure-as-code? Sorry! Start here.
 
-That file is the input to the inherit backend, which turns it into a working
-OpenTofu/Terraform project. **The backend is the paid product; this tool is
-not.** Everything here is auditable. The point of splitting it out is that the
-half that touches your account is open.
+`inherit` is one small binary that runs **on your machine**, discovers what's
+in an AWS account using **read-only AWS APIs only**, and writes a working
+OpenTofu/Terraform project describing it, ready to `init` / `validate` /
+`plan` / `import`. Free and open source (Apache-2.0), no account, no upload,
+no backend.
+
+```sh
+inherit scan --profile my-readonly-profile     # discover + generate ./inherit-<account>/
+inherit plan   inherit-<account>                # tofu init + validate + plan
+inherit import inherit-<account>                # bring every resource into local state
+```
 
 ## What it does and doesn't do
 
-- `inherit scan` makes **no network calls except to read-only AWS APIs**
-  (`Describe*` / `List* `/ `Get*` + `sts:GetCallerIdentity`). A signing-time
+- `inherit scan` makes **no network calls except read-only AWS APIs**
+  (`Describe*` / `List*` / `Get*` + `sts:GetCallerIdentity`). A signing-time
   guard rejects anything else before it leaves the process.
-- `inherit submit` makes **no network calls at all**. It packages the
-  redacted `inventory.json` into `inventory.tar.gz` on disk; you drop that
-  file on the site yourself to preview the generated project and its price.
 - It never writes, changes, or deletes anything in your account.
-
-## Redaction
-
-A handful of fields legitimately end up in Terraform config but routinely hold
-secrets: Lambda environment variables, EC2 `user_data`, and plain
-(non-`SecureString`) SSM parameter values. `scan` replaces these with a
-marker in `inventory.json` and writes the real values to a local
-`inventory.secrets.json` (auto-gitignored, never uploaded). The delivered
-Terraform uses `lifecycle { ignore_changes }` for them and ships a guide for
-wiring them back up.
-
-Secrets Manager values, RDS/Redshift master passwords, and SSM `SecureString`
-are never read in the first place.
-
-An AWS access key ID (`AKIA...`/`ASIA...`) is redacted wherever it turns up
-in a resource's config, not just the fields above -- confirmed against a
-real account: IAM users tagged with their own access key ID as the tag
-*key*, a common way to label "which key is this". The tag's human label
-(the value) stays legible; only the key ID itself is stripped.
-
-ECS container `environment[]` values are **not** redacted -- there's no
-reliable way to tell a real secret apart from ordinary plaintext config
-(log level, hostname, feature flags) there, and AWS itself never treats the
-field as sensitive (`secrets[]`, the actually-encrypted path, is untouched
-either way). If a real secret ended up in `environment[]` instead of
-`secrets[]`, that happened in the live account before `inherit` ever saw it.
+  `inherit import` uses classic `import`, which only ever calls the
+  provider's `Read`. `inherit import --fast` batches imports through `apply`,
+  but only on a plan it has first verified contains nothing but no-op
+  imports (see [How it works](#how-it-works)).
+- Nothing is sent anywhere else. Your inventory, your secrets and your
+  generated project stay on your disk.
 
 ## Installation
 
@@ -55,71 +36,178 @@ curl -fsSL https://raw.githubusercontent.com/virtualbeck/inherit/main/install.sh
 ```
 
 Downloads the right binary for your OS/arch, verifies it against the
-release's `SHA256SUMS`, and installs it to `~/.local/bin/inherit` -- no
+release's `SHA256SUMS`, and installs it to `~/.local/bin/inherit`: no
 `sudo`, nothing written outside your home directory. Re-run any time to
-update. If `~/.local/bin` isn't already on your `PATH`, the script tells you
-the line to add.
+update. `INHERIT_INSTALL_DIR` overrides the install directory.
 
-Prefer to do it by hand, or want it somewhere else (`INHERIT_INSTALL_DIR`
-overrides the install directory)? Grab a binary directly from
-[Releases](https://github.com/virtualbeck/inherit/releases):
-
-```sh
-curl -LO https://github.com/virtualbeck/inherit/releases/latest/download/inherit_<version>_<os>_<arch>
-chmod +x inherit_<version>_<os>_<arch>
-mv inherit_<version>_<os>_<arch> ~/.local/bin/inherit   # or /usr/local/bin, if you'd rather it be system-wide
-```
-
-`<os>` is `darwin` or `linux`; `<arch>` is `amd64` or `arm64` (`arm64` on
-Apple Silicon). On macOS the binary is unsigned, so the first run will need
-`xattr -d com.apple.quarantine <path>` or an approval click through
-**System Settings > Privacy & Security**.
-
-Verify any download against the `SHA256SUMS` file published alongside each
-release -- `install.sh` above does this for you automatically.
+Or grab a binary from [Releases](https://github.com/virtualbeck/inherit/releases)
+(`inherit_<version>_<os>_<arch>`, `<os>` = `darwin` | `linux`, `<arch>` =
+`amd64` | `arm64`) and verify it against `SHA256SUMS`. On macOS the binary is
+unsigned, so the first run needs `xattr -d com.apple.quarantine <path>` or an
+approval in **System Settings > Privacy & Security**.
 
 ### Windows
 
-Download `inherit_<version>_windows_<arch>.exe` from the
-[Releases](https://github.com/virtualbeck/inherit/releases) page (`amd64` or
-`arm64`), then run it from PowerShell or `cmd.exe`. It isn't code-signed, so
-SmartScreen will flag it on first run; click **More info > Run anyway**, or
-build from source if you'd rather not.
+Download `inherit_<version>_windows_<arch>.exe` from
+[Releases](https://github.com/virtualbeck/inherit/releases). It isn't
+code-signed, so SmartScreen flags it on first run (**More info > Run
+anyway**).
 
-Verify any download against the `SHA256SUMS` file published alongside each
-release.
+### From source
+
+```sh
+go install github.com/virtualbeck/inherit/cmd/inherit@latest   # Go 1.27+
+```
+
+`plan` and `import` need [OpenTofu](https://opentofu.org) (preferred) or
+Terraform on your `PATH`. `scan` and `generate` don't.
 
 ## Usage
 
-```sh
-inherit scan --profile my-readonly-profile --regions us-east-1 --out ./inherit-<account>
-cd ./inherit-<account> && inherit submit
+```
+inherit scan       discover the account (read-only) and generate the project
+inherit generate   regenerate the project from an existing inventory.json (offline)
+inherit plan       tofu init + validate + plan against a generated project
+inherit import     plan, plus state-only import of every resource (--fast: batched)
 ```
 
-`submit` defaults `--out` to the current directory, so it just needs to run
-from wherever `scan` wrote its output -- pass `--out` explicitly instead if
-you'd rather not `cd`. Either way it packages `inventory.tar.gz` in that
-directory; drop it on the site to preview your generated project and its
-price.
-
-`scan` is a point-in-time snapshot. If something in the account gets
-created, changed, or torn down after you scan but before you run
-`tofu import`/`apply` on the delivered project, that drift is real and
-expected -- `tofu plan` will tell you (e.g. "Cannot import non-existent
-remote object" for something deleted in between). Run `scan` -> `submit`
--> apply reasonably close together, especially against an account with
-anything actively churning.
-
-## Build
+Authenticate however you normally do (env vars, SSO, a profile): `inherit`
+reads the standard AWS SDK chain and shows you the account, identity and
+regions it resolved before doing anything. A read-only role is enough;
+[docs/iam-policy.json](docs/iam-policy.json) is a minimal policy.
 
 ```sh
-go build ./cmd/inherit
+inherit scan                                     # every enabled region, confirm prompt
+inherit scan --profile prod-readonly -y          # pick a profile, skip the prompt
+inherit scan --regions us-east-1,eu-west-1       # narrow the regions
+inherit scan --services-exclude cloudformation,guardduty    # skip whole services
+inherit scan --services-exclude cloudformation:stackset     # ...or one resource type
+inherit scan --services-include ec2,s3           # scan ONLY these services
+inherit scan --include-ephemeral                 # keep snapshots / AMIs / backups
+inherit scan --include-defaults                  # keep default VPCs + per-region singletons
+inherit scan -e prod                             # label the example state key in backend.tf
+
+inherit plan inherit-123456789012
+inherit import inherit-123456789012              # one `import` per resource, Read-only
+inherit import --fast inherit-123456789012       # far faster on hundreds of resources
+inherit generate inherit-123456789012            # re-render after upgrading inherit
 ```
 
-`make dist` cross-compiles release binaries for macOS, Linux, and Windows
-(amd64 + arm64 each) into `dist/`.
+Each run is one account into one directory: `./inherit-<account>` by default,
+with a unix-timestamp suffix if that already exists (re-generating into a
+prior run's directory can leave stale state behind). `--out` picks your own
+path, used as given.
+
+`scan` is a point-in-time snapshot. If something changes in the account
+between `scan` and `import`, `tofu plan` will tell you (for example, "Cannot
+import non-existent remote object" for something deleted in between).
+
+### What you get
+
+```
+inherit-123456789012/
+  inventory.json          what was discovered (secrets redacted)
+  inventory.secrets.json  the redacted values (gitignored; never commit it)
+  .gitignore              secrets, state, plan files, .terraform/
+  versions.tf             required OpenTofu/provider versions
+  providers.tf            the aws provider, plus one alias per extra region
+  main.tf                 the root module: every category module, wired together
+  imports.tf              one import {} block per resource
+  backend.tf              local state by default, with a commented S3 skeleton
+  UNMANAGED_FIELDS.md     attributes left to ignore_changes (redacted secrets)
+  README.md
+  modules/<category>/     compute, network, database, storage, security, ...
+```
+
+### Secrets
+
+A handful of fields legitimately end up in Terraform config but routinely hold
+secrets: Lambda environment variables, EC2 / launch template user data, plain
+(non-`SecureString`) SSM parameter values, CloudFormation stack parameters,
+and AWS access key IDs anywhere they turn up (IAM users tagged with their own
+key ID are common). `scan` moves their values into `inventory.secrets.json`
+and leaves a marker in `inventory.json`.
+
+The generated project never contains those values. Each affected attribute is
+listed under the resource's `lifecycle { ignore_changes = [...] }`, so the
+project plans clean on day one, and `UNMANAGED_FIELDS.md` lists every one with
+the ARN to look up in `inventory.secrets.json` when you're ready to wire it to
+a secret store.
+
+Secrets Manager values, RDS/Redshift master passwords and SSM `SecureString`
+values are never read in the first place. ECS container `environment[]`
+values are **not** redacted: nothing reliably tells a secret apart from plain
+config there, and AWS doesn't treat that field as sensitive either
+(`secrets[]` is the encrypted path).
+
+Note that `terraform.tfstate` holds real attribute values once you import.
+It's gitignored; treat it as sensitive.
+
+## How it works
+
+1. **Discover.** `resourcegroupstaggingapi:GetResources` swept across every
+   enabled region in parallel, plus gap-fillers for what that API never
+   returns (IAM roles/users/groups/policies, AWS Config recorders, ...).
+   Point-in-time artifacts are skipped by default.
+2. **Hydrate.** A per-resource-type fetcher calls the specific
+   `Describe`/`Get` operations for full configuration (~200 Terraform
+   resource types; see [docs/COVERAGE.md](docs/COVERAGE.md)). Children
+   discovered off a parent (SNS subscriptions, S3 bucket sub-resources, IAM
+   policy attachments, ...) are fanned out from it.
+3. **Prune.** Resources AWS creates everywhere regardless of use (an
+   unreferenced default VPC and its default SG/route table/NACL, per-region
+   setting singletons) are dropped, then any region left with nothing real.
+4. **Redact.** As described under [Secrets](#secrets).
+5. **Generate.** The AWS provider's own JSON schema (bundled, v6.69) tells the
+   generator every attribute's kind and type, and output is written with
+   `hclwrite`, so the HCL is valid by construction. Resources are laid out as
+   a root module calling one child module per category. Literal IDs and ARNs
+   that point at another discovered resource become references, wired
+   through module inputs/outputs when they cross a category. External IDs
+   become variables, account IDs and regions inside ARNs become `data`
+   lookups, a tag identical on every resource moves into `default_tags`, and
+   runs of 3+ identical resources fold into one `for_each` block. Resources
+   outside the default region get an aliased provider, since the per-resource
+   `region` argument isn't consulted during import.
+6. **Import.** `inherit import` runs one classic `import` per resource,
+   always safe but slow at scale. `inherit import --fast` batches instead,
+   and never applies a batch blind. For each batch it (a) pins every resource
+   to `lifecycle { ignore_changes = all }` via a transient override file, (b)
+   plans the batch to a file, (c) requires every change in that plan,
+   dependencies included, to be exactly a no-op import, and only then (d)
+   applies that exact saved plan. A batch that fails falls back to classic
+   import. The override files are removed when the run ends, success or
+   failure.
+
+More detail on the internals: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Known limitations
+
+A few provider-only directive attributes have no AWS-side data at all (Lambda
+`publish`, an SNS subscription's `confirmation_timeout_in_minutes`, a
+CloudFormation StackSet's `call_as`, ...). They show a one-time diff on the
+first `plan` after import because the provider's `Read` never populates them.
+That's harmless: one no-op `apply` settles it.
+
+Lambda code isn't recoverable from the API. Functions without an S3 or image
+source point at a placeholder zip in their module, which you swap for the
+real build.
+
+## Development
+
+```sh
+make             # vet + test + build ./bin/inherit
+make test        # go test ./...
+make integration # + real tofu init/validate runs (needs tofu/terraform + network)
+make lint        # golangci-lint
+make dist        # cross-compile linux/darwin/windows x amd64/arm64 into dist/
+make coverage    # regenerate docs/COVERAGE.md from the hydrator registry
+make schema      # re-bundle the latest hashicorp/aws 6.x provider schema
+```
+
+Releases are cut by pushing a `v*` tag; the release workflow builds every
+platform and publishes the binaries with `SHA256SUMS`.
 
 ## License
 
-Apache-2.0 (`LICENSE`). The **inherit** name and branding are reserved;
-see `TRADEMARK.md`.
+Apache-2.0. See [LICENSE](LICENSE).

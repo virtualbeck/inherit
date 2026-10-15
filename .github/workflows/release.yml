@@ -1,16 +1,11 @@
 name: release
 
-# Manual only, on purpose: nothing publishes on a tag push or a merge to
-# main. Trigger it by hand from the Actions tab when you're ready, review
-# the result, and `gh release delete <tag> --cleanup-tag` if it's a stinker
-# -- releases and their tag are fully redactable, nothing here is one-way.
+# Push a v* tag to release. A bad release is fully reversible:
+# `gh release delete <tag> --cleanup-tag`.
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Version tag to release, e.g. v0.1.0"
-        required: true
+  push:
+    tags: ["v*"]
 
 permissions:
   contents: write
@@ -19,28 +14,23 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version: "1.25"
+          go-version-file: go.mod
           cache: true
+
+      - run: go test ./...
 
       - name: build (linux+darwin+windows, amd64+arm64)
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ github.ref_name }}
         run: make dist
-
-      - name: tag
-        env:
-          VERSION: ${{ inputs.version }}
-        run: |
-          git tag "$VERSION"
-          git push origin "$VERSION"
 
       - name: create release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ github.ref_name }}
         run: |
           gh release create "$VERSION" dist/* \
             --title "$VERSION" \

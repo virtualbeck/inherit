@@ -1,4 +1,4 @@
-GO      ?= $(shell command -v go 2>/dev/null || echo $(HOME)/.local/go/bin/go)
+GO      ?= go
 PKG     := github.com/virtualbeck/inherit
 BIN     := inherit
 
@@ -13,7 +13,9 @@ LDFLAGS := -s -w \
 
 PLATFORMS ?= linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 
-.PHONY: build dev dist test vet fmt lint coverage
+.PHONY: all build dev dist test integration vet fmt lint coverage schema
+
+all: vet test build
 
 build:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o bin/$(BIN) ./cmd/inherit
@@ -36,6 +38,12 @@ dist:
 test:
 	$(GO) test ./...
 
+# real tofu/terraform init + validate (+ the fast-import safety gate) against
+# generated projects; needs tofu or terraform on PATH and network access for
+# the provider download. No AWS credentials.
+integration:
+	INHERIT_INTEGRATION=1 $(GO) test ./internal/emit/ ./internal/cli/
+
 vet:
 	$(GO) vet ./...
 
@@ -45,6 +53,10 @@ fmt:
 lint:
 	golangci-lint run ./...
 
-# regenerates the vendored provider schema breakdown
+# regenerates docs/COVERAGE.md from the hydrator registry
 coverage:
 	$(GO) run ./tfschema/cmd/coverage -md > docs/COVERAGE.md
+
+# re-bundles the latest hashicorp/aws 6.x provider schema (needs tofu/terraform)
+schema:
+	$(GO) run ./tfschema/cmd/genschema

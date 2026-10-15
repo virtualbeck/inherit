@@ -28,10 +28,9 @@ type Resource struct {
 
 // Inventory is the full discovery result.
 type Inventory struct {
-	// ToolVersion is the inherit-core version that produced this file. The
-	// backend keys HCL-generation behavior on it and refuses / warns on a
-	// version whose output shape it doesn't know. A single stamp, not
-	// migration machinery.
+	// ToolVersion is the inherit version that produced this file, so
+	// `inherit generate` on an older inventory can say which release made
+	// it. A single stamp, not migration machinery.
 	ToolVersion string     `json:"tool_version"`
 	Account     string     `json:"account"`
 	Partition   string     `json:"partition"`

@@ -11,7 +11,7 @@ func TestDatasyncS3BucketARNAndSubdir(t *testing.T) {
 	}{
 		{"s3://my-bucket/some/path", "arn:aws:s3:::my-bucket", "/some/path", true},
 		{"s3://my-bucket/", "arn:aws:s3:::my-bucket", "/", true},
-		{"s3://my-bucket", "", "", false}, // no subdirectory segment at all -- can't happen for a real DataSync S3 location, but must not panic
+		{"s3://my-bucket", "", "", false}, // no subdirectory: must not panic
 		{"efs://fs-123/path", "", "", false},
 		{"", "", "", false},
 	}

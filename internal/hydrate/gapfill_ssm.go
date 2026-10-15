@@ -11,12 +11,7 @@ import (
 
 func init() { registerGapFiller(gapFillSSMExtras) }
 
-// knownSSMServiceSettingIDs is the fixed, documented catalog of SSM service
-// setting IDs -- there is no ListServiceSettings API at all, and
-// GetServiceSetting's own SDK doc comment enumerates exactly these as the
-// only valid values. Only settings actually found Customized (not the
-// AWS-provisioned Default) are ever emitted, so an account that hasn't
-// touched any of these produces nothing here.
+// The documented setting IDs; there's no list API.
 var knownSSMServiceSettingIDs = []string{
 	"/ssm/appmanager/appmanager-enabled",
 	"/ssm/automation/customer-script-log-destination",
@@ -30,9 +25,6 @@ var knownSSMServiceSettingIDs = []string{
 	"/ssm/parameter-store/high-throughput-enabled",
 }
 
-// gapFillSSMExtras discovers resource data syncs (ListResourceDataSync --
-// account/region-scoped, no ARN or tagging concept) and any customized
-// service settings from the fixed catalog above.
 func gapFillSSMExtras(ctx context.Context, c *Clients, region string) ([]model.Resource, error) {
 	cl := ssm.NewFromConfig(c.Cfg(region))
 	var out []model.Resource
@@ -80,8 +72,7 @@ func gapFillSSMExtras(ctx context.Context, c *Clients, region string) ([]model.R
 		token = page.NextToken
 	}
 
-	// independent single reads: a few at once rather than 10 back to back.
-	// Each writes its own slot, so the output keeps the list's order.
+	// independent reads, four at once, order kept
 	settings := make([]*model.Resource, len(knownSSMServiceSettingIDs))
 	idx := make([]int, len(knownSSMServiceSettingIDs))
 	for i := range idx {

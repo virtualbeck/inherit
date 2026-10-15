@@ -13,10 +13,7 @@ func TestSnake(t *testing.T) {
 		"MapPublicIpOnLaunch":  "map_public_ip_on_launch",
 		"Name":                 "name",
 		"MaxSessionDuration":   "max_session_duration",
-		// found via aws_ecs_capacity_provider.managed_instances_provider.
-		// instance_requirements: single-trailing-capital acronyms
-		// (VCpu/MiB/GiB) the generic rule mangles the same way IPv4/IPv6
-		// once did, just not caught until a field name actually used them.
+		// single-trailing-capital acronyms, like IPv4/IPv6
 		"VCpuCount":                 "vcpu_count",
 		"MemoryMiB":                 "memory_mib",
 		"AcceleratorTotalMemoryMiB": "accelerator_total_memory_mib",

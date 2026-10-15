@@ -70,7 +70,6 @@ func TestForEachConsolidatesSubnets(t *testing.T) {
 		t.Errorf("locals.tf does not parse: %s", d)
 	}
 
-	// one keyed import block per member
 	imp := read(t, dir, "imports.tf")
 	got := regexp.MustCompile(`aws_subnet\.private\["[^"]+"\]`).FindAllString(imp, -1)
 	if len(got) != 3 {
@@ -128,7 +127,7 @@ func TestForEachRequiresThree(t *testing.T) {
 }
 
 func TestForEachSplitsByStructuralDifference(t *testing.T) {
-	// two private + two public: neither run of identical structure reaches 3.
+	// two private, two public: neither reaches 3
 	inv := model.Inventory{
 		Account: "123456789012", Regions: []string{"us-east-1"},
 		Resources: []model.Resource{

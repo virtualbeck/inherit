@@ -10,24 +10,14 @@ import (
 
 func init() { registerGapFiller(gapFillConfigRecorder) }
 
-// gapFillConfigRecorder discovers the account's Config configuration
-// recorder and delivery channel: true account-level singletons (one of
-// each per region, no ARN-based tagging concept at all), so
-// resourcegroupstaggingapi:GetResources has no path to ever find them --
-// structurally, not a thin-coverage quirk like the IAM gap. Both are
-// genuinely per-region (unlike IAM's account-global registerGlobalGapFiller),
-// so a plain registerGapFiller running once per scanned region is correct
-// here.
+// Per-region singletons with no ARN to discover.
 func gapFillConfigRecorder(ctx context.Context, c *Clients, region string) ([]model.Resource, error) {
 	cl := configservice.NewFromConfig(c.Cfg(region))
 	var out []model.Resource
 
 	if recs, err := cl.DescribeConfigurationRecorders(ctx, &configservice.DescribeConfigurationRecordersInput{}); err == nil {
 		for _, rec := range recs.ConfigurationRecorders {
-			// Service-linked recorders (one per AWS service that needs
-			// one) are AWS-managed, not something to import -- same
-			// exclusion precedent as service-linked IAM roles and
-			// AWS-managed KMS keys elsewhere in this package.
+			// service-linked recorders are AWS-managed
 			if aws.ToString(rec.ServicePrincipal) != "" {
 				continue
 			}

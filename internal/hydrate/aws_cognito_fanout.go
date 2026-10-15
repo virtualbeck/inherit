@@ -12,7 +12,6 @@ func init() {
 	registerFanout("aws_cognito_user_pool", fanoutCognitoClients)
 }
 
-// fanoutCognitoClients expands a user pool into its app clients.
 func fanoutCognitoClients(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	cl := cip.NewFromConfig(c.Cfg(parent.Region))
 	pool := parent.ID

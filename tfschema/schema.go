@@ -1,7 +1,4 @@
-// Package tfschema exposes the vendored AWS Terraform provider schema: for any
-// aws_* resource type, whether a name is an argument or a nested block, its cty
-// type, and its required/optional/computed flags. This is what lets the emitter
-// pick `name = {...}` vs `name {...}` correctly for every attribute.
+// Package tfschema exposes the bundled AWS provider schema.
 package tfschema
 
 import (
@@ -17,7 +14,6 @@ import (
 //go:embed schema/aws.min.json.gz
 var embedded []byte
 
-// Kind is the coarse shape of a cty type.
 type Kind uint8
 
 const (
@@ -32,43 +28,36 @@ const (
 	KindDynamic
 )
 
-// Type is a decoded cty type.
 type Type struct {
 	Kind  Kind
-	Elem  *Type            // list / set / map element
-	Attrs map[string]*Type // object attributes
+	Elem  *Type
+	Attrs map[string]*Type
 }
 
-// IsCollectionOfObject reports a list/set whose element is an object, the shape
-// the provider models as a repeatable nested block.
+// IsCollectionOfObject: a list/set of objects, a repeatable block.
 func (t *Type) IsCollectionOfObject() bool {
 	return t != nil && (t.Kind == KindList || t.Kind == KindSet) && t.Elem != nil && t.Elem.Kind == KindObject
 }
 
-// Attribute is one schema attribute.
 type Attribute struct {
 	Type       *Type
 	Required   bool
 	Optional   bool
 	Computed   bool
-	NestedMode string // set when the provider models this attribute as a nested type
+	NestedMode string
 	Nested     *Block
 }
 
-// Settable reports whether a value for this attribute may appear in config
-// (i.e. it isn't a purely computed / read-only attribute like id or arn).
+// Settable reports whether config may set the attribute.
 func (a *Attribute) Settable() bool { return a != nil && (a.Optional || a.Required) }
 
-// IsMap reports a map-typed attribute, emitted as `name = { ... }`.
 func (a *Attribute) IsMap() bool { return a != nil && a.Type != nil && a.Type.Kind == KindMap }
 
-// Block is a schema block: its direct attributes and nested block types.
 type Block struct {
 	Attributes map[string]*Attribute
 	BlockTypes map[string]*BlockType
 }
 
-// Attr returns a direct attribute of the block.
 func (b *Block) Attr(name string) (*Attribute, bool) {
 	if b == nil {
 		return nil, false
@@ -77,7 +66,6 @@ func (b *Block) Attr(name string) (*Attribute, bool) {
 	return a, ok
 }
 
-// NestedBlock returns a nested block type of the block.
 func (b *Block) NestedBlock(name string) (*BlockType, bool) {
 	if b == nil {
 		return nil, false
@@ -86,7 +74,6 @@ func (b *Block) NestedBlock(name string) (*BlockType, bool) {
 	return bt, ok
 }
 
-// Has reports whether name is known to this block, as an attribute or a block.
 func (b *Block) Has(name string) bool {
 	if b == nil {
 		return false
@@ -98,7 +85,6 @@ func (b *Block) Has(name string) bool {
 	return ok
 }
 
-// BlockType is a nested block definition.
 type BlockType struct {
 	NestingMode string // "single" | "list" | "set" | "map"
 	MinItems    int
@@ -106,12 +92,10 @@ type BlockType struct {
 	Block       *Block
 }
 
-// Schema is the whole provider's resource schema set.
 type Schema struct {
 	Resources map[string]*Block
 }
 
-// Resource returns the schema block for an aws_* resource type.
 func (s *Schema) Resource(tfType string) (*Block, bool) {
 	b, ok := s.Resources[tfType]
 	return b, ok
@@ -123,13 +107,10 @@ var (
 	loadErr  error
 )
 
-// Load decodes the embedded schema once and caches it.
 func Load() (*Schema, error) {
 	loadOnce.Do(func() { loaded, loadErr = decode(embedded) })
 	return loaded, loadErr
 }
-
-// --- wire format ----------------------------------------------------------
 
 type wireRoot struct {
 	ResourceSchemas map[string]wireBlock `json:"resource_schemas"`
@@ -210,12 +191,7 @@ func convBlock(wb wireBlock) *Block {
 	return b
 }
 
-// parseCtyType decodes the JSON encoding of a cty type:
-//
-//	"string" | "number" | "bool" | "dynamic"
-//	["list", T] | ["set", T] | ["map", T]
-//	["object", {name: T, ...}] (optionally a 3rd element listing optional names)
-//	["tuple", [T, ...]]
+// parseCtyType decodes a JSON-encoded cty type.
 func parseCtyType(raw json.RawMessage) *Type {
 	if len(raw) == 0 {
 		return &Type{Kind: KindDynamic}

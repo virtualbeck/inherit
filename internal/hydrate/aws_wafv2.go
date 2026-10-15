@@ -17,8 +17,7 @@ func init() {
 	registerFanout("aws_wafv2_web_acl", fanoutWAFAssociations)
 }
 
-// wafScope returns the API scope and the region its client must use. wafv2 ARNs
-// carry the scope word ("regional" | "global") as their resource type.
+// wafScope derives API scope and client region.
 func wafScope(r model.Resource) (wafv2types.Scope, string) {
 	if r.Type == "global" {
 		return wafv2types.ScopeCloudfront, "us-east-1"
@@ -30,7 +29,6 @@ func wafScope(r model.Resource) (wafv2types.Scope, string) {
 	return wafv2types.ScopeRegional, region
 }
 
-// wafVisibility renders a VisibilityConfig block.
 func wafVisibility(v *wafv2types.VisibilityConfig) map[string]any {
 	if v == nil {
 		return nil
@@ -42,7 +40,6 @@ func wafVisibility(v *wafv2types.VisibilityConfig) map[string]any {
 	}
 }
 
-// wafCustomBodies renders CustomResponseBodies as custom_response_body blocks.
 func wafCustomBodies(m map[string]wafv2types.CustomResponseBody) []any {
 	var out []any
 	for k, b := range m {
@@ -55,7 +52,6 @@ func wafCustomBodies(m map[string]wafv2types.CustomResponseBody) []any {
 	return out
 }
 
-// wafDefaultAction renders the web ACL default_action (allow | block).
 func wafDefaultAction(a *wafv2types.DefaultAction) map[string]any {
 	if a == nil {
 		return nil
@@ -69,11 +65,7 @@ func wafDefaultAction(a *wafv2types.DefaultAction) map[string]any {
 	return nil
 }
 
-// wafAssociationConfigResourceKeys maps AssociationConfig.RequestBody's map
-// keys (AssociatedResourceType enum values) to their schema attribute name
-// under association_config.request_body. AGENTCORE_GATEWAY has no schema
-// counterpart (newer than what this provider version supports) and is
-// skipped rather than guessed at.
+// AGENTCORE_GATEWAY has no schema counterpart; skipped.
 var wafAssociationConfigResourceKeys = map[string]string{
 	"CLOUDFRONT":               "cloudfront",
 	"API_GATEWAY":              "api_gateway",
@@ -82,10 +74,6 @@ var wafAssociationConfigResourceKeys = map[string]string{
 	"VERIFIED_ACCESS_INSTANCE": "verified_access_instance",
 }
 
-// wafAssociationConfig renders association_config (per-resource-type request
-// body inspection size limits) -- a real, commonly-set web ACL attribute
-// (e.g. any CloudFront/API Gateway web ACL customizing the 16KB default) that
-// Generic() would never reach, since this hydrator is hand-built.
 func wafAssociationConfig(a *wafv2types.AssociationConfig) map[string]any {
 	if a == nil || len(a.RequestBody) == 0 {
 		return nil
@@ -104,8 +92,6 @@ func wafAssociationConfig(a *wafv2types.AssociationConfig) map[string]any {
 	return map[string]any{"request_body": []any{rb}}
 }
 
-// wafImmunityTime renders the shared immunity_time_property{} shape used by
-// both captcha_config and challenge_config.
 func wafImmunityTime(p *wafv2types.ImmunityTimeProperty) map[string]any {
 	if p == nil || p.ImmunityTime == nil {
 		return nil
@@ -113,8 +99,6 @@ func wafImmunityTime(p *wafv2types.ImmunityTimeProperty) map[string]any {
 	return map[string]any{"immunity_time_property": []any{map[string]any{"immunity_time": *p.ImmunityTime}}}
 }
 
-// wafDataProtectionConfig renders data_protection_config's data_protection[]
-// entries (field-level redaction/hashing rules).
 func wafDataProtectionConfig(c *wafv2types.DataProtectionConfig) map[string]any {
 	if c == nil || len(c.DataProtections) == 0 {
 		return nil
@@ -184,8 +168,7 @@ func hydrateWAFWebACL(ctx context.Context, c *Clients, r model.Resource) (map[st
 	if dp := wafDataProtectionConfig(a.DataProtectionConfig); dp != nil {
 		cfg["data_protection_config"] = []any{dp}
 	}
-	// The rule trees are recursive; the provider takes them verbatim as the
-	// WAFv2-API JSON via rule_json (conflicts with the `rule` block).
+	// recursive rules go verbatim through rule_json
 	if len(a.Rules) > 0 {
 		j, err := json.Marshal(a.Rules)
 		if err != nil {
@@ -233,8 +216,6 @@ func hydrateWAFRuleGroup(ctx context.Context, c *Clients, r model.Resource) (map
 	return cfg, nil
 }
 
-// fanoutWAFAssociations emits an aws_wafv2_web_acl_association per resource the
-// (regional) web ACL is attached to.
 func fanoutWAFAssociations(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	scope, region := wafScope(parent)
 	if scope != wafv2types.ScopeRegional {
@@ -271,9 +252,7 @@ func fanoutWAFAssociations(ctx context.Context, c *Clients, parent model.Resourc
 	if lc, err := cl.GetLoggingConfiguration(ctx, &wafv2.GetLoggingConfigurationInput{ResourceArn: &parent.ARN}); err == nil && lc.LoggingConfiguration != nil {
 		sch, serr := schemaFor("aws_wafv2_web_acl_logging_configuration")
 		if serr == nil {
-			// LoggingFilter.Filters (plural) doesn't snake-case to the
-			// schema's "filter" (singular) -- an override, not a
-			// nested-block-drop issue, everything else here maps cleanly.
+			// Filters maps to filter
 			if cfg, gerr := Generic(lc.LoggingConfiguration, sch, map[string]string{"filters": "filter"}); gerr == nil && len(cfg) > 0 {
 				kids = append(kids, model.Resource{
 					Service: "wafv2", Type: "webacl-logging-configuration", TFType: "aws_wafv2_web_acl_logging_configuration",

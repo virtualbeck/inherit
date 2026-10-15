@@ -14,8 +14,6 @@ func init() {
 	registerFanout("aws_ssm_maintenance_window", fanoutMaintenanceWindow)
 }
 
-// fanoutMaintenanceWindow expands a maintenance window into its registered
-// targets and tasks, both separate top-level resources in the provider.
 func fanoutMaintenanceWindow(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	cl := ssm.NewFromConfig(c.Cfg(parent.Region))
 	windowID := parent.ID
@@ -54,12 +52,7 @@ func fanoutMaintenanceWindow(ctx context.Context, c *Clients, parent model.Resou
 		targetToken = out.NextToken
 	}
 
-	// GetMaintenanceWindowTask (singular, per task) is called for each task
-	// rather than relying on DescribeMaintenanceWindowTasks alone: the list
-	// call doesn't return TaskInvocationParameters at all (only the
-	// deprecated TaskParameters/LoggingInfo), so the actual "what does this
-	// task run" detail -- the most load-bearing part of the resource --
-	// would otherwise be silently absent from every imported task.
+	// only Get returns TaskInvocationParameters
 	taskSch, err := schemaFor("aws_ssm_maintenance_window_task")
 	if err != nil {
 		return kids, err
@@ -80,14 +73,7 @@ func fanoutMaintenanceWindow(ctx context.Context, c *Clients, parent model.Resou
 			if err != nil {
 				continue
 			}
-			// The union's own field names (Automation/Lambda/RunCommand/
-			// StepFunctions) snake-case to e.g. "run_command", but the
-			// schema's matching nested blocks are all suffixed
-			// "_parameters" (run_command_parameters, ...) -- with no
-			// override, filterBlock treats the whole thing as an unknown
-			// key and drops the ENTIRE sub-block (comment, timeout_seconds,
-			// document_version, everything), not just the one field that
-			// actually needed remapping.
+			// union fields need the _parameters suffix
 			cfg, err := Generic(full, taskSch, map[string]string{
 				"automation":     "automation_parameters",
 				"lambda":         "lambda_parameters",
@@ -115,16 +101,7 @@ func fanoutMaintenanceWindow(ctx context.Context, c *Clients, parent model.Resou
 	return kids, nil
 }
 
-// ssmTaskAttachParameters attaches each task-type's own "parameter" block(s)
-// directly from the raw SDK struct: SSM's RunCommand/Automation
-// TaskInvocationParameters both carry their parameters as
-// map[string][]string, but the schema wants a repeated
-// `parameter { name, values }` block -- a map-vs-list-of-struct shape
-// Generic() has no way to bridge on its own. Builds the enclosing
-// task_invocation_parameters/*_parameters maps by hand if Generic() dropped
-// them entirely, since a sub-block whose ONLY meaningful content is its
-// parameters would otherwise vanish outright -- an all-empty nested block
-// never survives filterNested's "keep only if non-empty" check.
+// Parameter maps become repeated parameter blocks.
 func ssmTaskAttachParameters(cfg map[string]any, tip *ssmtypes.MaintenanceWindowTaskInvocationParameters) {
 	if tip == nil {
 		return
@@ -145,12 +122,7 @@ func ssmTaskAttachParameters(cfg map[string]any, tip *ssmtypes.MaintenanceWindow
 	}
 }
 
-// ssmSingleBlock returns the one map inside m[k], whether Generic() already
-// represented it as a bare map or (its actual convention for a max-1 nested
-// block, both task_invocation_parameters and run_command_parameters use
-// nesting mode "list") a one-element list -- creating an empty one, wired
-// back into m the same list-wrapped way, if k is absent so a value can still
-// be attached even when Generic() dropped the whole sub-block as empty.
+// ssmSingleBlock returns m[k]'s map, creating it if absent.
 func ssmSingleBlock(m map[string]any, k string) map[string]any {
 	switch v := m[k].(type) {
 	case []any:
@@ -167,8 +139,6 @@ func ssmSingleBlock(m map[string]any, k string) map[string]any {
 	return sub
 }
 
-// ssmParameterList converts map[string][]string into the schema's repeated
-// {name, values} block shape, sorted by name for deterministic output.
 func ssmParameterList(params map[string][]string) []any {
 	names := make([]string, 0, len(params))
 	for k := range params {

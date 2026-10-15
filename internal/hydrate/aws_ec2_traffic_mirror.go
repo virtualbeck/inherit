@@ -44,9 +44,6 @@ func hydrateTrafficMirrorFilter(ctx context.Context, c *Clients, r model.Resourc
 	return cfg, nil
 }
 
-// fanoutTrafficMirrorFilterRules expands a filter into its ingress/egress
-// rules -- DescribeTrafficMirrorFilters already returns both lists directly
-// on the filter itself, no separate call needed.
 func fanoutTrafficMirrorFilterRules(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	id := parent.ID
 	out, err := ec2.NewFromConfig(c.Cfg(parent.Region)).DescribeTrafficMirrorFilters(ctx, &ec2.DescribeTrafficMirrorFiltersInput{TrafficMirrorFilterIds: []string{id}})
@@ -88,11 +85,7 @@ func fanoutTrafficMirrorFilterRules(ctx context.Context, c *Clients, parent mode
 			Service: "ec2", Type: "traffic-mirror-filter-rule", TFType: "aws_ec2_traffic_mirror_filter_rule",
 			Region: parent.Region, Account: parent.Account,
 			ID: ruleID,
-			// the resource's own stored state id is just the bare rule id,
-			// but its ImportStateContext expects "filter-id:rule-id" as the
-			// import input specifically -- confirmed by a real "unexpected
-			// format ... expected <filter-id>:<rule-id>" failure, not
-			// assumed from the bare-id convention most other types use.
+			// import wants filter-id:rule-id
 			ImportID: id + ":" + ruleID,
 			Config:   cfg,
 		})

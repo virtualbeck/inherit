@@ -9,12 +9,7 @@ import (
 	"github.com/virtualbeck/inherit/model"
 )
 
-// Regression test: genericHydrator with no override silently dropped IAM's
-// User/Group "name" attribute entirely, because the SDK structs marshal to
-// "user_name"/"group_name", neither of which exists in the schema (both
-// resources just call it "name") -- Generic() treats an unknown key as
-// unknown-to-schema and drops it, leaving the Required `name` argument unset
-// and the generated HCL invalid. genericHydratorOverride must rename it.
+// IAM user_name/group_name must become the required name.
 func TestGenericHydratorOverrideSetsIAMName(t *testing.T) {
 	userFetch := func(ctx context.Context, c *Clients, r model.Resource) (any, error) {
 		return iamtypes.User{

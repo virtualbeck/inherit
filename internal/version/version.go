@@ -1,4 +1,4 @@
-// Package version carries build metadata, stamped by the linker at release.
+// Package version holds linker-stamped build metadata.
 package version
 
 import "fmt"
@@ -9,7 +9,6 @@ var (
 	Date    = "unknown"
 )
 
-// String is the one-line version banner.
 func String() string {
 	return fmt.Sprintf("%s (commit %s, built %s)", Version, Commit, Date)
 }

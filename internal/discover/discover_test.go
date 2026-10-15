@@ -52,7 +52,6 @@ func TestFilterResourcesExclude(t *testing.T) {
 		t.Errorf("kept = %+v, want just the lambda function", kept)
 	}
 
-	// no Exclude set: only the ephemeral filter applies
 	svc, typ = excludeSet(nil)
 	kept, excludedHits = filterResources(res, nil, svc, typ, false)
 	if excludedHits != 0 {
@@ -63,9 +62,6 @@ func TestFilterResourcesExclude(t *testing.T) {
 	}
 }
 
-// service:type entries drop only that one ARN resource-type within a
-// service, leaving the rest of that service alone -- the whole point of
-// this granularity over a bare service exclude.
 func TestFilterResourcesExcludeByType(t *testing.T) {
 	res := []model.Resource{
 		{Service: "cloudformation", Type: "stack"},
@@ -84,8 +80,6 @@ func TestFilterResourcesExcludeByType(t *testing.T) {
 	}
 }
 
-// --services is an allowlist: only listed services survive, everything
-// else is dropped regardless of --exclude.
 func TestFilterResourcesServicesAllowlist(t *testing.T) {
 	res := []model.Resource{
 		{Service: "ec2", Type: "instance"},

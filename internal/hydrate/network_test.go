@@ -8,9 +8,7 @@ import (
 )
 
 func TestDhcpOptionsConfig(t *testing.T) {
-	// DescribeDhcpOptions returns an opaque key/value list (AWS's own
-	// hyphenated key names), not the schema's flat attribute names -- this
-	// is the only thing that translates one into the other.
+	// hyphenated key/value list onto flat attributes
 	opts := []ec2types.DhcpConfiguration{
 		{Key: aws.String("domain-name"), Values: []ec2types.AttributeValue{{Value: aws.String("example.com")}}},
 		{Key: aws.String("domain-name-servers"), Values: []ec2types.AttributeValue{
@@ -37,10 +35,7 @@ func TestDhcpOptionsConfig(t *testing.T) {
 	}
 }
 
-// realistic shape of what DescribeVpnConnections' CustomerGatewayConfiguration
-// actually returns (trimmed to the fields vpnTunnelConfig reads); tunnels
-// deliberately listed out of the "tunnel1 < tunnel2" address order, matching
-// the real, documented unordered-ness this function has to correct for.
+// tunnels deliberately out of address order
 const testVPNCustomerGatewayXML = `<vpn_connection id="vpn-1">
   <ipsec_tunnel>
     <vpn_gateway>
@@ -69,8 +64,7 @@ const testVPNCustomerGatewayXML = `<vpn_connection id="vpn-1">
 func TestVPNTunnelConfig(t *testing.T) {
 	opts := &ec2types.VpnConnectionOptions{
 		TunnelOptions: []ec2types.TunnelOption{
-			// deliberately listed in the SAME (non-address-sorted) order
-			// as the XML above, to prove matching is by address, not index.
+			// same order as the XML; matched by address
 			{
 				OutsideIpAddress: aws.String("203.0.113.2"),
 				DpdTimeoutAction: aws.String("clear"),
@@ -89,12 +83,7 @@ func TestVPNTunnelConfig(t *testing.T) {
 		t.Fatal("vpnTunnelConfig returned nil")
 	}
 
-	// tunnel1 must get the preshared_key from the tunnel with the
-	// lexicographically smaller outside address (203.0.113.1 -> "firstkey"),
-	// regardless of XML/JSON list order. address/bgp_asn/bgp_holdtime/
-	// cgw_inside_address/vgw_inside_address are deliberately NOT asserted
-	// here -- all five are Computed-only in the schema and must never
-	// appear in generated config at all.
+	// lower outside address is tunnel1
 	if cfg["tunnel1_preshared_key"] != "firstkey" {
 		t.Errorf("tunnel1_preshared_key = %v, want firstkey", cfg["tunnel1_preshared_key"])
 	}
@@ -111,8 +100,7 @@ func TestVPNTunnelConfig(t *testing.T) {
 			t.Errorf("%s must not appear in generated config (Computed-only in the schema)", computedOnly)
 		}
 	}
-	// JSON-sourced fields matched by outside address, not list position:
-	// tunnel1 (203.0.113.1) must get the SECOND TunnelOptions[] entry.
+	// matched by address, not position
 	if cfg["tunnel1_dpd_timeout_action"] != "restart" {
 		t.Errorf("tunnel1_dpd_timeout_action = %v, want restart (matched by address, not index)", cfg["tunnel1_dpd_timeout_action"])
 	}
@@ -135,8 +123,7 @@ func TestVPNTunnelConfigNilCases(t *testing.T) {
 	if got := vpnTunnelConfig(testVPNCustomerGatewayXML, &ec2types.VpnConnectionOptions{TunnelOptions: make([]ec2types.TunnelOption, 1)}); got != nil {
 		t.Errorf("only 1 TunnelOption: got %v, want nil", got)
 	}
-	// TunnelOptions' outside addresses don't match anything in the XML at
-	// all -- must bail rather than attribute JSON config to the wrong tunnel.
+	// unmatched addresses must bail
 	mismatched := &ec2types.VpnConnectionOptions{TunnelOptions: []ec2types.TunnelOption{
 		{OutsideIpAddress: aws.String("198.51.100.1")},
 		{OutsideIpAddress: aws.String("198.51.100.2")},

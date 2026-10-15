@@ -12,10 +12,7 @@ func init() {
 	registerFanout("aws_opensearch_domain", fanoutOpenSearchExtras)
 }
 
-// fanoutOpenSearchExtras expands a domain into its access-policy resource
-// (modeled separately from the domain by the provider even though
-// DescribeDomain already returns AccessPolicies alongside everything else)
-// and any outbound VPC endpoints associated with it.
+// Access policy and outbound VPC endpoints.
 func fanoutOpenSearchExtras(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	cl := opensearch.NewFromConfig(c.Cfg(parent.Region))
 	name := parent.ID

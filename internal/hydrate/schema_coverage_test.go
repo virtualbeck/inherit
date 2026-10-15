@@ -2,8 +2,7 @@ package hydrate
 
 import "testing"
 
-// Every TF type inherit can emit must exist in the vendored provider schema, or
-// the emitter silently drops it.
+// Every emittable type must exist in the schema.
 func TestEmittableTypesHaveSchema(t *testing.T) {
 	// direct hydrators
 	for tf := range registry {
@@ -11,7 +10,6 @@ func TestEmittableTypesHaveSchema(t *testing.T) {
 			t.Errorf("hydrator %s: %v", tf, err)
 		}
 	}
-	// arn -> tf mappings (a hydrator may land later, but the type must be real)
 	for _, tf := range arnToTF {
 		if _, err := schemaFor(tf); err != nil {
 			t.Errorf("arnToTF %s: %v", tf, err)

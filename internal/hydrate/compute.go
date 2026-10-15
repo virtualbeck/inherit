@@ -52,7 +52,7 @@ func hydrateInstance(ctx context.Context, c *Clients, r model.Resource) (map[str
 		cfg["private_ip"] = v
 	}
 	if i.IamInstanceProfile != nil {
-		// the provider stores this as the profile name, not the ARN
+		// stored as the profile name
 		arn := aws.ToString(i.IamInstanceProfile.Arn)
 		if x := strings.LastIndexByte(arn, '/'); x >= 0 {
 			arn = arn[x+1:]
@@ -173,9 +173,7 @@ func hydrateInstance(ctx context.Context, c *Clients, r model.Resource) (map[str
 			cfg["ebs_block_device"] = blocks.ebs
 		}
 	}
-	// disable_api_termination / disable_api_stop / instance_initiated_shutdown_behavior
-	// aren't part of DescribeInstances either -- same per-attribute call as
-	// user_data below, one InstanceAttributeName at a time.
+	// these need DescribeInstanceAttribute, one per call
 	ec2c := ec2.NewFromConfig(c.Cfg(r.Region))
 	if attr, aerr := ec2c.DescribeInstanceAttribute(ctx, &ec2.DescribeInstanceAttributeInput{
 		InstanceId: &r.ID, Attribute: ec2types.InstanceAttributeNameDisableApiTermination,
@@ -194,11 +192,7 @@ func hydrateInstance(ctx context.Context, c *Clients, r model.Resource) (map[str
 			cfg["instance_initiated_shutdown_behavior"] = v
 		}
 	}
-	// UserData isn't part of DescribeInstances -- it's a separate
-	// per-attribute call, and AWS always returns it base64-encoded. The
-	// provider's Read decodes it into user_data when the result is valid
-	// UTF-8 (falling back to user_data_base64 otherwise), so match that here
-	// rather than always emitting the encoded form.
+	// decoded to user_data when valid UTF-8, like Read
 	if attr, aerr := ec2.NewFromConfig(c.Cfg(r.Region)).DescribeInstanceAttribute(ctx, &ec2.DescribeInstanceAttributeInput{
 		InstanceId: &r.ID, Attribute: ec2types.InstanceAttributeNameUserData,
 	}); aerr == nil && attr.UserData != nil && aws.ToString(attr.UserData.Value) != "" {
@@ -212,14 +206,7 @@ func hydrateInstance(ctx context.Context, c *Clients, r model.Resource) (map[str
 	return cfg, nil
 }
 
-// instanceBlockDevices splits the instance's BlockDeviceMappings into the
-// root device and the rest, matched against RootDeviceName the same way the
-// provider's own Read does. InstanceBlockDeviceMapping/EbsInstanceBlockDevice
-// only carry DeleteOnTermination and VolumeId -- size/type/iops/throughput/
-// encrypted/kms_key_id all require a separate DescribeVolumes call, batched
-// here into one request for every attached volume. A failure fetching
-// volumes (or no volumes at all) degrades to nil, not an error -- the rest
-// of the instance's config is still worth having.
+// Root vs other devices; volume details batched.
 func instanceBlockDevices(ctx context.Context, c *Clients, region string, i ec2types.Instance) *instanceBlocks {
 	if len(i.BlockDeviceMappings) == 0 {
 		return nil
@@ -292,13 +279,7 @@ type instanceBlocks struct {
 	ebs  []any
 }
 
-// hydrateLaunchTemplate: DescribeLaunchTemplates only returns metadata
-// (id/name/version numbers) -- none of a template's actual instance
-// configuration (image_id, instance_type, block_device_mappings,
-// network_interfaces, ...) lives there. That's ResponseLaunchTemplateData,
-// returned only by DescribeLaunchTemplateVersions. LaunchTemplateName also
-// doesn't snake-case to the schema's "name", so a plain Generic() call on
-// the metadata response alone loses even that.
+// Template data lives in DescribeLaunchTemplateVersions.
 func hydrateLaunchTemplate(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	sch, err := schemaFor("aws_launch_template")
 	if err != nil {
@@ -335,15 +316,7 @@ func hydrateLaunchTemplate(ctx context.Context, c *Clients, r model.Resource) (m
 		cfg["description"] = d
 	}
 
-	// Two fields Generic() can't reach on its own, both silently dropped
-	// with no error:
-	// (1) network_interfaces[].Groups (SDK) holds VPC security group ids,
-	// but the schema's matching attribute is named "security_groups" (not
-	// "security_group_ids", unlike a plain aws_instance) -- Generic()'s
-	// snake_case name matching never finds it.
-	// (2) tag_specifications[].Tags is []Tag in the SDK but the schema's
-	// "tags" is map(string) -- the same IsMap()-passthrough gap
-	// documented elsewhere in this package.
+	// Generic() misses Groups and []Tag-shaped tags.
 	if nis, ok := cfg["network_interfaces"].([]any); ok {
 		for i, ni := range nis {
 			if i >= len(v.LaunchTemplateData.NetworkInterfaces) {
@@ -415,13 +388,7 @@ func hydrateASG(ctx context.Context, c *Clients, r model.Resource) (map[string]a
 			"version": aws.ToString(g.LaunchTemplate.Version),
 		}
 	}
-	// ASGs don't have a top-level tags map at all (the schema has no "tags"
-	// attribute) -- every tag, including propagate_at_launch, only exists as
-	// a repeatable tag{} block. DescribeAutoScalingGroups returns exactly
-	// that shape directly; the registry's generic `cfg["tags"] = r.Tags`
-	// (registry.go) is a silent no-op for this type (writeBlock drops
-	// unrecognized top-level keys), so this was the only way any ASG tag,
-	// let alone propagate_at_launch, could ever survive into config.
+	// ASG tags exist only as tag blocks
 	var tags []any
 	for _, t := range g.Tags {
 		if strings.HasPrefix(aws.ToString(t.Key), "aws:") {
@@ -574,17 +541,7 @@ func hydrateEMRCluster(ctx context.Context, c *Clients, r model.Resource) (map[s
 		}
 		cfg["ec2_attributes"] = attrs
 	}
-	// DescribeCluster's Cluster doesn't carry instance group/fleet details at
-	// all (a separate ListInstanceGroups/ListInstanceFleets call) -- without
-	// this, master_instance_group/core_instance_group (or the fleet
-	// equivalents) came back completely empty, so a real cluster's whole
-	// instance configuration showed as dropped on every plan.
-	// InstanceCollectionType tells us which shape this cluster actually
-	// uses. TASK groups/fleets are deliberately excluded either way: the
-	// provider models them as a separate aws_emr_instance_group /
-	// aws_emr_instance_fleet resource, not a block here (and inherit doesn't
-	// yet emit those as standalone resources -- a separate gap, tracked in
-	// CLAUDE.md, not this one).
+	// groups/fleets are separate calls; TASK excluded
 	if cl.InstanceCollectionType == emrtypes.InstanceCollectionTypeInstanceFleet {
 		if err := hydrateEMRInstanceFleets(ctx, c, r, cfg); err != nil {
 			return nil, err
@@ -597,10 +554,6 @@ func hydrateEMRCluster(ctx context.Context, c *Clients, r model.Resource) (map[s
 	return cfg, nil
 }
 
-// hydrateEMRInstanceFleets fills master_instance_fleet/core_instance_fleet
-// for an INSTANCE_FLEET-type cluster -- the modern replacement for
-// instance groups (mixed instance types/Spot+On-Demand within one fleet),
-// a materially different, larger shape from hydrateEMRInstanceGroups.
 func hydrateEMRInstanceFleets(ctx context.Context, c *Clients, r model.Resource, cfg map[string]any) error {
 	cl := emr.NewFromConfig(c.Cfg(r.Region))
 	p := emr.NewListInstanceFleetsPaginator(cl, &emr.ListInstanceFleetsInput{ClusterId: &r.ID})
@@ -728,14 +681,7 @@ func hydrateEMRInstanceGroups(ctx context.Context, c *Clients, r model.Resource,
 	return nil
 }
 
-// emrEbsConfig flattens EbsBlockDevices into ebs_config set entries. AWS
-// returns one EbsBlockDevice per actually-attached volume; the provider's own
-// Read (flattenEBSConfig) groups identical specs (type/size/iops/throughput)
-// into one ebs_config entry with volumes_per_instance set to the count --
-// ebs_config is a Set, and volumes_per_instance is part of its hash, so N
-// separate entries at volumes_per_instance=1 are N distinct set members, not
-// the same thing as one entry at N. Device (the exposed device name) has no
-// schema counterpart.
+// Groups identical volumes, as the provider's Read does.
 func emrEbsConfig(devs []emrtypes.EbsBlockDevice) []any {
 	type key struct {
 		typ                    string

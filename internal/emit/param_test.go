@@ -48,18 +48,12 @@ func TestParameterize(t *testing.T) {
 		t.Error("region use not tracked")
 	}
 
-	// a plain string that merely contains the account number is untouched
 	if s := paramString("job-123456789012-output", r, "us-west-2", &use); s != "job-123456789012-output" {
 		t.Errorf("non-arn string was rewritten: %v", s)
 	}
 }
 
-// A resource on an aliased (non-default) provider must not get its region
-// literal swapped for data.aws_region.current -- that data source resolves
-// via the module's DEFAULT provider, not the resource's own alias, and
-// would silently interpolate the wrong region (this corrupted a same-region
-// KMS key ARN on an aws_db_instance in a live account: the generated ARN's
-// region flipped to the default region, which is also a ForceNew diff).
+// Aliased resources use their own aws_region instance.
 func TestParameterizeAliasedRegion(t *testing.T) {
 	r := model.Resource{Account: "123456789012", Region: "us-west-1"}
 	var use dataUse

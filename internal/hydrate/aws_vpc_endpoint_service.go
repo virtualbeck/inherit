@@ -25,11 +25,7 @@ func hydrateVPCEndpointService(ctx context.Context, c *Clients, r model.Resource
 	if err != nil {
 		return nil, err
 	}
-	// supported_regions is schema-typed as a plain list of region-code
-	// strings, but the SDK's SupportedRegionDetail is a {Region,
-	// ServiceState} struct -- Generic()'s JSON round-trip passes the whole
-	// object through untouched since it doesn't check scalar-vs-object
-	// shape, so this needs to be flattened by hand.
+	// flatten region structs to strings
 	if len(out.ServiceConfigurations[0].SupportedRegions) > 0 {
 		var regions []any
 		for _, sr := range out.ServiceConfigurations[0].SupportedRegions {

@@ -145,7 +145,7 @@ func scanCmd() *cobra.Command {
 			if err := os.MkdirAll(absOut, 0o755); err != nil {
 				return err
 			}
-			// before the secrets file exists, so it's never unprotected
+			// before the secrets file exists
 			if err := writeGitignore(absOut); err != nil {
 				return err
 			}
@@ -180,10 +180,7 @@ func scanCmd() *cobra.Command {
 	return cmd
 }
 
-// defaultOutDir is ./inherit-<account>, or a unix-timestamped sibling when
-// that already exists: re-generating into a prior run's directory can leave
-// stale terraform.tfstate / .terraform/ behind that no longer match this
-// run's resource addresses. An explicit --out is always used as given.
+// Timestamped if taken: stale state breaks re-runs.
 func defaultOutDir(account string) string {
 	dir := "inherit-" + account
 	if _, err := os.Stat(dir); err == nil {
@@ -217,8 +214,6 @@ func writeJSON(path string, v any, mode os.FileMode) error {
 	return os.WriteFile(path, append(b, '\n'), mode)
 }
 
-// relOrAbs shortens dir to a ./-relative path when it's under the working
-// directory, for copy-pasteable "next:" hints.
 func relOrAbs(dir string) string {
 	wd, err := os.Getwd()
 	if err != nil {

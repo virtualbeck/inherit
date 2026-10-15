@@ -1,4 +1,4 @@
-// Package model holds the data types that flow between inherit's stages.
+// Package model holds the inventory data types.
 package model
 
 import (
@@ -6,8 +6,7 @@ import (
 	"strings"
 )
 
-// Resource is one discovered AWS resource. Discovery fills everything except
-// Config; hydration fills Config with the full describe/get output.
+// Resource is one discovered AWS resource.
 type Resource struct {
 	ARN     string            `json:"arn"`
 	Service string            `json:"service"`           // e.g. "s3", "ec2"
@@ -19,18 +18,12 @@ type Resource struct {
 	Tags    map[string]string `json:"tags,omitempty"`
 	Config  map[string]any    `json:"config,omitempty"` // TF-attribute-shaped, filled by hydration
 
-	// ImportID overrides the value used in the import block when the provider's
-	// import id is not the plain ID -- compound ids like
-	// "<rest-api-id>/<resource-id>/<method>". Set by fanouts; ID stays the
-	// value other resources reference.
+	// ImportID overrides ID in import blocks when needed.
 	ImportID string `json:"import_id,omitempty"`
 }
 
-// Inventory is the full discovery result.
 type Inventory struct {
-	// ToolVersion is the inherit version that produced this file, so
-	// `inherit generate` on an older inventory can say which release made
-	// it. A single stamp, not migration machinery.
+	// ToolVersion is the inherit version that wrote this.
 	ToolVersion string     `json:"tool_version"`
 	Account     string     `json:"account"`
 	Partition   string     `json:"partition"`
@@ -38,7 +31,7 @@ type Inventory struct {
 	Resources   []Resource `json:"resources"`
 }
 
-// CountsByType returns a service.type -> count map for the summary.
+// CountsByType counts resources by service.type.
 func (inv Inventory) CountsByType() map[string]int {
 	m := map[string]int{}
 	for _, r := range inv.Resources {
@@ -51,7 +44,7 @@ func (inv Inventory) CountsByType() map[string]int {
 	return m
 }
 
-// SortedTypeCounts is CountsByType flattened and sorted by count desc, then name.
+// SortedTypeCounts sorts CountsByType by count, then name.
 func (inv Inventory) SortedTypeCounts() []TypeCount {
 	m := inv.CountsByType()
 	out := make([]TypeCount, 0, len(m))
@@ -73,8 +66,7 @@ type TypeCount struct {
 	Count int    `json:"count"`
 }
 
-// ParseARN splits an ARN into (partition, service, region, account, resource).
-// resource keeps its full "type/id" or "type:id" form.
+// ParseARN splits an ARN into its parts.
 func ParseARN(arn string) (partition, service, region, account, resource string, ok bool) {
 	// arn:partition:service:region:account-id:resource
 	p := strings.SplitN(arn, ":", 6)
@@ -84,8 +76,7 @@ func ParseARN(arn string) (partition, service, region, account, resource string,
 	return p[1], p[2], p[3], p[4], p[5], true
 }
 
-// SplitResource separates an ARN resource segment into a type and an id.
-// Handles "type/id", "type:id", "type/id/with/slashes" and bare "id".
+// SplitResource splits a resource segment into type, id.
 func SplitResource(resource string) (rtype, id string) {
 	if i := strings.IndexAny(resource, "/:"); i >= 0 {
 		return resource[:i], resource[i+1:]

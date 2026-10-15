@@ -46,7 +46,6 @@ func TestSplit(t *testing.T) {
 		t.Error("lambda env key dropped, should be kept")
 	}
 
-	// user_data redacted
 	if inv.Resources[1].Config["user_data"] != Sentinel {
 		t.Errorf("user_data not redacted: %v", inv.Resources[1].Config["user_data"])
 	}
@@ -59,14 +58,11 @@ func TestSplit(t *testing.T) {
 		t.Error("SecureString SSM value should not have been touched")
 	}
 
-	// ECS container_definitions is left entirely untouched -- environment[]
-	// isn't covered (see redact.go's package doc for why); a real secret
-	// placed there instead of secrets[] is a mistake made outside this tool.
+	// environment[] is deliberately not redacted.
 	if inv.Resources[4].Config["container_definitions"] != origECSContainerDefs {
 		t.Errorf("ECS container_definitions should be untouched, got: %v", inv.Resources[4].Config["container_definitions"])
 	}
 
-	// every redacted value is recoverable from the secrets slice
 	byPath := map[string]string{}
 	for _, s := range secrets {
 		byPath[s.ResourceARN+"|"+s.Path] = s.Value
@@ -101,13 +97,7 @@ func TestSplitIdempotent(t *testing.T) {
 	}
 }
 
-// Confirmed against a real account: IAM users tagged with their own
-// access key ID as the tag KEY (a common way to label "which key is
-// this"), value a human description -- a location none of the
-// field-specific rules cover, since it's not the value of any known-name
-// field. Two redacted keys land in the SAME tags map, which is exactly
-// the case that needs unique renamed keys or one silently clobbers the
-// other.
+// Two key IDs in one map mustn't collide.
 func TestSplitRedactsAccessKeyIDsInTags(t *testing.T) {
 	inv := &model.Inventory{Resources: []model.Resource{
 		{
@@ -142,9 +132,7 @@ func TestSplitRedactsAccessKeyIDsInTags(t *testing.T) {
 	if tags0["Environment"] != "prod" {
 		t.Error("unrelated tag should be untouched")
 	}
-	// The access key ID (the tag KEY) is the sensitive part and gets
-	// renamed away; the human label (the tag VALUE -- "ci_deploy_key")
-	// isn't a credential and stays legible, unredacted, under its new key.
+	// The key ID goes; the label value stays.
 	redactedKeys := 0
 	gotLabels := map[string]bool{}
 	for k, v := range tags0 {
@@ -176,7 +164,6 @@ func TestSplitRedactsAccessKeyIDsInTags(t *testing.T) {
 		}
 	}
 
-	// the original access-key-shaped key is recoverable from the secrets slice
 	var keySecrets int
 	for _, s := range secrets {
 		switch s.Value {

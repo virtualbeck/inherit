@@ -13,11 +13,7 @@ func init() {
 	registerGlobalGapFiller(gapFillRoute53QueryLogs)
 }
 
-// gapFillRoute53DelegationSets discovers reusable delegation sets: Route53
-// is a global service, and delegation sets have no ARN or tagging support at
-// all -- Read never even sets reference_name back, since it's
-// create-only/ForceNew with no API to read it from -- so
-// resourcegroupstaggingapi has no path to ever find them.
+// Global, untaggable, and reference_name is create-only.
 func gapFillRoute53DelegationSets(ctx context.Context, c *Clients, region string) ([]model.Resource, error) {
 	cl := route53.NewFromConfig(c.Cfg(region))
 	var out []model.Resource
@@ -29,8 +25,7 @@ func gapFillRoute53DelegationSets(ctx context.Context, c *Clients, region string
 			break
 		}
 		for _, ds := range page.DelegationSets {
-			// defensive: strip a possible "/delegationset/" prefix in case
-			// the API ever returns the ID that way.
+			// strip a possible /delegationset/ prefix
 			id := aws.ToString(ds.Id)
 			if i := lastSlash(id); i >= 0 {
 				id = id[i+1:]
@@ -49,11 +44,6 @@ func gapFillRoute53DelegationSets(ctx context.Context, c *Clients, region string
 	return out, nil
 }
 
-// gapFillRoute53QueryLogs discovers DNS query logging configs: no ARN or
-// tagging attribute exists in the schema at all (only
-// cloudwatch_log_group_arn/zone_id/arn/id, no tags), so
-// resourcegroupstaggingapi has no path to find them either. Global service,
-// same as delegation sets above.
 func gapFillRoute53QueryLogs(ctx context.Context, c *Clients, region string) ([]model.Resource, error) {
 	cl := route53.NewFromConfig(c.Cfg(region))
 	var out []model.Resource

@@ -61,9 +61,6 @@ import {
 	}
 }
 
-// IDs and for_each keys with characters HCL escapes ($${, quotes,
-// backslashes) must come back exactly, and a block of the wrong shape is an
-// error rather than silently dropped.
 func TestReadImportsEscapingAndShape(t *testing.T) {
 	dir := t.TempDir()
 	f := hclwrite.NewEmptyFile()

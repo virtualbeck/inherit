@@ -8,10 +8,7 @@ import (
 	"github.com/virtualbeck/inherit/model"
 )
 
-// Fanout expands one discovered resource into extra standalone resources, for
-// cases the provider models as separate types (security-group rules, S3 bucket
-// sub-configs, ...). It runs after the parent is hydrated and only sees parents
-// that hydrated cleanly.
+// Fanout derives child resources from a hydrated parent.
 type Fanout func(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error)
 
 var fanoutRegistry = map[string]Fanout{}
@@ -23,7 +20,6 @@ func registerFanout(parentTFType string, f Fanout) {
 	fanoutRegistry[parentTFType] = f
 }
 
-// runFanout appends child resources produced from already-hydrated parents.
 func runFanout(ctx context.Context, c *Clients, inv *model.Inventory, concurrency int) []error {
 	if concurrency <= 0 {
 		concurrency = 16

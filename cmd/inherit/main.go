@@ -1,6 +1,4 @@
-// Command inherit turns a live, non-IaC AWS account into a working
-// OpenTofu/Terraform project: read-only discovery, schema-driven HCL
-// generation, and (optionally) state import, all on your own machine.
+// Command inherit turns AWS accounts into OpenTofu projects.
 package main
 
 import "github.com/virtualbeck/inherit/internal/cli"

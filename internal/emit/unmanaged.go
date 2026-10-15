@@ -10,19 +10,14 @@ import (
 	"github.com/virtualbeck/inherit/internal/redact"
 )
 
-// unmanaged is one resource whose config carried redacted values (see
-// internal/redact): the top-level attributes involved are written under
-// lifecycle.ignore_changes so the project plans clean on day one without the
-// secret ever landing in a .tf file.
+// Attributes with redacted values go under ignore_changes.
 type unmanaged struct {
-	addr  string // module-qualified resource address
+	addr  string
 	arn   string
 	attrs []string
 }
 
-// unmanagedAttrs returns, sorted, every top-level attribute of cfg that holds
-// redact.Sentinel anywhere beneath it -- as a value, or as a map key (an
-// access key ID used as a tag key is renamed to Sentinel + "_key_N").
+// Top-level attributes holding the sentinel anywhere, sorted.
 func unmanagedAttrs(cfg map[string]any) []string {
 	var out []string
 	for k, v := range cfg {
@@ -58,17 +53,11 @@ func hasSentinel(v any) bool {
 	return false
 }
 
-// dropRedactedScalars removes top-level attributes whose whole value is the
-// sentinel when the provider format-checks them (base64 user data): a
-// placeholder there fails validate, and with the attribute under
-// ignore_changes, leaving it out of config plans exactly the same. Other
-// placeholders stay -- some are required in practice (aws_ssm_parameter
-// needs exactly one of value/insecure_value), and in place they point at
-// what to fill in.
+// Base64 placeholders fail validate; drop them from config.
 func dropRedactedScalars(tfType string, cfg map[string]any) map[string]any {
 	for _, k := range []string{"user_data_base64", "user_data"} {
 		if k == "user_data" && tfType != "aws_launch_template" {
-			continue // aws_instance.user_data is plain text
+			continue // plain text there
 		}
 		if s, ok := cfg[k].(string); ok && s == redact.Sentinel {
 			delete(cfg, k)
@@ -77,14 +66,11 @@ func dropRedactedScalars(tfType string, cfg map[string]any) map[string]any {
 	return cfg
 }
 
-// writeIgnoreChanges appends lifecycle { ignore_changes = [attrs...] }.
 func writeIgnoreChanges(b *hclwrite.Body, attrs []string) {
 	b.AppendNewBlock("lifecycle", nil).Body().
 		SetAttributeRaw("ignore_changes", rawExprTokens("["+strings.Join(attrs, ", ")+"]"))
 }
 
-// unmanagedDoc is UNMANAGED_FIELDS.md: every attribute left to
-// ignore_changes, and where its real value is.
 func unmanagedDoc(list []unmanaged) string {
 	var b strings.Builder
 	b.WriteString("# Unmanaged fields\n\n")
@@ -104,7 +90,6 @@ func unmanagedDoc(list []unmanaged) string {
 	return b.String()
 }
 
-// unionAttrs merges attribute lists, sorted and deduplicated.
 func unionAttrs(sets ...[]string) []string {
 	seen := map[string]bool{}
 	for _, s := range sets {

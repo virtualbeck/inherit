@@ -8,9 +8,7 @@ import (
 	"github.com/virtualbeck/inherit/model"
 )
 
-// Redacted values must never become something tofu would push back to the
-// account: their attributes go under ignore_changes, whole-value
-// placeholders are left out of config, and UNMANAGED_FIELDS.md lists them.
+// Redacted attributes are ignored, dropped or documented.
 func TestWriteRedactedFieldsUnmanaged(t *testing.T) {
 	inv := model.Inventory{
 		Account: "123456789012", Regions: []string{"us-east-1"},

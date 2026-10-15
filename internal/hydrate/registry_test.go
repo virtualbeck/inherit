@@ -7,12 +7,7 @@ import (
 	"github.com/virtualbeck/inherit/model"
 )
 
-// hydrateRegistered exists specifically for gap-fillers, which run outside
-// Run()'s own per-resource loop -- the only other place retypeSentinel is
-// applied. A bare registry[tfType] lookup silently leaves an unprocessed
-// sentinel key sitting in cfg and never updates the resource's type (e.g.
-// gapFillDefaultNetwork's aws_vpc entries would keep emitting as plain
-// aws_vpc despite hydrateVPC's own retype firing correctly).
+// hydrateRegistered must apply retypeSentinel for gap-fillers.
 func TestHydrateRegisteredAppliesRetype(t *testing.T) {
 	const testType = "aws_test_retype_probe"
 	registry[testType] = func(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {

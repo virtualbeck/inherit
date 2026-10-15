@@ -14,10 +14,6 @@ func init() {
 	registerGapFiller(gapFillLogsAccountPolicies)
 }
 
-// gapFillLogsResourcePolicies discovers CloudWatch Logs resource policies
-// (used by other services -- EventBridge, VPC flow logs, etc. -- to grant
-// PutLogEvents into a log group) -- an account/region-scoped list, no ARN
-// or tagging concept.
 func gapFillLogsResourcePolicies(ctx context.Context, c *Clients, region string) ([]model.Resource, error) {
 	cl := cwl.NewFromConfig(c.Cfg(region))
 	var out []model.Resource
@@ -49,15 +45,10 @@ func gapFillLogsResourcePolicies(ctx context.Context, c *Clients, region string)
 	return out, nil
 }
 
-// logsAccountPolicyTypes is the fixed enum DescribeAccountPolicies requires
-// as input (it has no "list all types" mode) -- copied from the SDK's own
-// PolicyType.Values() so it can't drift.
+// Required input; no list-all mode.
 var logsAccountPolicyTypes = cwltypes.PolicyType("").Values()
 
-// gapFillLogsAccountPolicies discovers account-wide CloudWatch Logs
-// policies (data protection, subscription filter, field index, transformer,
-// metric extraction) -- one DescribeAccountPolicies call per policy type,
-// since the API has no way to list across all types at once.
+// One call per policy type.
 func gapFillLogsAccountPolicies(ctx context.Context, c *Clients, region string) ([]model.Resource, error) {
 	cl := cwl.NewFromConfig(c.Cfg(region))
 	var out []model.Resource

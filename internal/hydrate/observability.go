@@ -24,9 +24,7 @@ func init() {
 	register("aws_cloudwatch_log_group", hydrateLogGroup)
 }
 
-// fetchEventDataStore's AdvancedEventSelectors/FieldSelectors (plural)
-// don't snake-case to the schema's advanced_event_selector/field_selector
-// (singular block names) -- an override, not a nested-block-drop issue.
+// plural selector fields map to singular blocks
 func fetchEventDataStore(ctx context.Context, c *Clients, r model.Resource) (any, error) {
 	arn := r.ARN
 	out, err := ct.NewFromConfig(c.Cfg(r.Region)).GetEventDataStore(ctx, &ct.GetEventDataStoreInput{EventDataStore: &arn})
@@ -80,8 +78,7 @@ func hydrateCompositeAlarm(ctx context.Context, c *Clients, r model.Resource) (m
 	return cfg, nil
 }
 
-// Metric alarms: Dimensions is a list in the API, a map in Terraform; the
-// metric_query graph needs its own shaping.
+// Dimensions list becomes a map.
 func hydrateMetricAlarm(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	sch, err := schemaFor("aws_cloudwatch_metric_alarm")
 	if err != nil {
@@ -184,10 +181,7 @@ func hydrateCloudTrail(ctx context.Context, c *Clients, r model.Resource) (map[s
 	if t.LogFileValidationEnabled != nil {
 		cfg["enable_log_file_validation"] = *t.LogFileValidationEnabled
 	}
-	// GetTrail doesn't return event/insight selectors at all -- separate
-	// calls. Data-event logging (S3/Lambda/DynamoDB) and Insights are both
-	// common real-world trail customizations; dropping them silently would
-	// have understated a trail's actual configuration entirely.
+	// selectors are separate calls
 	cl := ct.NewFromConfig(c.Cfg(r.Region))
 	if es, eerr := cl.GetEventSelectors(ctx, &ct.GetEventSelectorsInput{TrailName: &r.ARN}); eerr == nil {
 		if len(es.EventSelectors) > 0 {

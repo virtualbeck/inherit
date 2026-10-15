@@ -9,11 +9,6 @@ import (
 
 func init() { registerGapFiller(gapFillBackupRegionSettings) }
 
-// gapFillBackupRegionSettings discovers the account's per-region Backup
-// resource-type opt-in/management preferences: a true singleton (one per
-// account per region, DescribeRegionSettings takes no input at all) with no
-// ARN or tagging concept, same structural gap as ECR's registry-level
-// settings.
 func gapFillBackupRegionSettings(ctx context.Context, c *Clients, region string) ([]model.Resource, error) {
 	out, err := backup.NewFromConfig(c.Cfg(region)).DescribeRegionSettings(ctx, &backup.DescribeRegionSettingsInput{})
 	if err != nil {
@@ -36,10 +31,7 @@ func gapFillBackupRegionSettings(ctx context.Context, c *Clients, region string)
 	}}, nil
 }
 
-// boolMapToAny converts a map[string]bool to map[string]any -- emit's HCL
-// writer only recognizes map[string]string/map[string]any for object-typed
-// attributes (a hydrator going through Generic()'s JSON round-trip gets this
-// for free; this hand-built gap-filler needs it explicit).
+// emit only handles string or any maps
 func boolMapToAny(m map[string]bool) map[string]any {
 	if len(m) == 0 {
 		return nil

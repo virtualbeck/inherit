@@ -14,11 +14,7 @@ func init() {
 	registerFanout("aws_backup_vault", fanoutBackupVaultSettings)
 }
 
-// fanoutBackupVaultSettings expands a backup vault into its access policy
-// and notifications, both separate top-level resources in the provider and
-// both optional per-vault settings -- most vaults have neither configured,
-// so a NotFound-style error from either Get call just means "not set", not
-// a real failure.
+// Vault policy and notifications; NotFound means unset.
 func fanoutBackupVaultSettings(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	cl := backup.NewFromConfig(c.Cfg(parent.Region))
 	name := parent.ID
@@ -52,12 +48,7 @@ func fanoutBackupVaultSettings(ctx context.Context, c *Clients, parent model.Res
 	return kids, nil
 }
 
-// fanoutBackupSelections expands a backup plan into its resource selections,
-// a separate top-level resource in the provider. Hand-built rather than
-// Generic(): GetBackupSelection's SelectionName doesn't snake-case to the
-// schema's "name", and Conditions/ListOfTags are shaped nothing like the
-// schema's condition{}/selection_tag{} blocks (a single object of 4 lists,
-// and a flat list, vs. repeatable {key,value}/{key,type,value} blocks).
+// Hand-built: names and condition shapes don't match.
 func fanoutBackupSelections(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	cl := backup.NewFromConfig(c.Cfg(parent.Region))
 	planID := parent.ID

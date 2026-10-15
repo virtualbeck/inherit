@@ -1,6 +1,4 @@
-// Command genschema regenerates tfschema/schema/aws.min.json.gz from a
-// live `tofu`/`terraform providers schema -json` dump, with descriptions
-// stripped. Run from the repo root: go run ./tfschema/cmd/genschema
+// Command genschema regenerates the bundled provider schema.
 package main
 
 import (

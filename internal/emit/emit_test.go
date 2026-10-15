@@ -47,11 +47,7 @@ func TestWriteBackendEnvironmentAware(t *testing.T) {
 	}
 }
 
-// A tag identical on every taggable resource is safe to lift into the
-// provider's default_tags; anything not identical everywhere (a resource
-// missing it, or holding a different value) must stay put -- default_tags
-// has no per-resource opt-out, so anything less than "everyone already
-// matches" would change a real resource's effective tags.
+// Only tags identical everywhere become default_tags.
 func TestWriteDefaultTags(t *testing.T) {
 	inv := model.Inventory{
 		Account: "123456789012", Regions: []string{"us-east-1"},
@@ -64,8 +60,7 @@ func TestWriteDefaultTags(t *testing.T) {
 				Tags: map[string]string{"Environment": "prod", "Team": "platform", "Name": "web-sg"},
 				Config: map[string]any{"name": "web", "vpc_id": "vpc-1",
 					"tags": map[string]string{"Environment": "prod", "Team": "platform", "Name": "web-sg"}}},
-			// Team differs here -- must NOT be hoisted despite matching on the
-			// other two resources.
+			// Team differs here, so it isn't hoisted.
 			{TFType: "aws_security_group", Region: "us-east-1", ID: "sg-2",
 				Tags: map[string]string{"Environment": "prod", "Team": "data", "Name": "db-sg"},
 				Config: map[string]any{"name": "db", "vpc_id": "vpc-1",
@@ -98,8 +93,7 @@ func TestWriteDefaultTags(t *testing.T) {
 }
 
 func TestWriteExternalRefHoisting(t *testing.T) {
-	// two security groups pointing at the SAME foreign (undiscovered) VPC --
-	// should share one bare "vpc_id" variable, not mint one each.
+	// two SGs on one foreign VPC share vpc_id
 	inv := model.Inventory{
 		Account: "123456789012", Regions: []string{"us-east-1"},
 		Resources: []model.Resource{
@@ -108,8 +102,7 @@ func TestWriteExternalRefHoisting(t *testing.T) {
 			{TFType: "aws_security_group", Region: "us-east-1", ID: "sg-2", Tags: map[string]string{"Name": "db"},
 				Config: map[string]any{"name": "db", "description": "db", "vpc_id": "vpc-ba627dde",
 					"vpc_security_group_ids": []any{"sg-external-1", "sg-external-2"}}},
-			// a third, unrelated VPC id -- must NOT share the "vpc_id" name
-			// with the two above (a real conflict, needs its own variable).
+			// a different VPC needs its own variable
 			{TFType: "aws_security_group", Region: "us-east-1", ID: "sg-3", Tags: map[string]string{"Name": "other"},
 				Config: map[string]any{"name": "other", "description": "other", "vpc_id": "vpc-deadbeef"}},
 		},
@@ -125,7 +118,7 @@ func TestWriteExternalRefHoisting(t *testing.T) {
 		t.Fatalf("expected a shared, bare \"vpc_id\" variable, got:\n%s", vars)
 	}
 	if strings.Contains(vars, "default") && strings.Contains(vars, `variable "vpc_id" {`) {
-		// crude but sufficient: the vpc_id block specifically must have no default.
+		// the vpc_id block must have no default
 		idx := strings.Index(vars, `variable "vpc_id" {`)
 		block := vars[idx : idx+strings.Index(vars[idx:], "}")]
 		if strings.Contains(block, "default") {
@@ -173,7 +166,7 @@ func TestWriteModuleLayout(t *testing.T) {
 				Config: map[string]any{"name": "web", "description": "web", "vpc_id": "vpc-1"}},
 			{TFType: "aws_s3_bucket", Region: "us-east-1", ID: "my-bucket",
 				Config: map[string]any{"bucket": "my-bucket"}},
-			// cross-module: database resource pointing at a network security group
+			// cross-module: database -> network
 			{TFType: "aws_db_instance", Region: "us-east-1", ID: "db-1",
 				Config: map[string]any{"identifier": "db-1", "engine": "postgres", "instance_class": "db.t3.micro",
 					"vpc_security_group_ids": []any{"sg-1"}}},
@@ -189,7 +182,6 @@ func TestWriteModuleLayout(t *testing.T) {
 		t.Fatalf("wrote %d blocks, want 5", res.Blocks)
 	}
 
-	// every generated .tf parses
 	_ = filepath.WalkDir(dir, func(p string, d os.DirEntry, _ error) error {
 		if d != nil && !d.IsDir() && strings.HasSuffix(p, ".tf") {
 			b, _ := os.ReadFile(p)
@@ -200,18 +192,15 @@ func TestWriteModuleLayout(t *testing.T) {
 		return nil
 	})
 
-	// vpc/subnet/sg are each the only one of their type in the network
-	// module -> each is "main" (different Terraform types, no collision).
+	// sole of each type, so each is main
 	net := read(t, dir, "modules", "network", "main.tf")
 	if !strings.Contains(net, `resource "aws_vpc" "main"`) || !strings.Contains(net, `resource "aws_security_group" "main"`) {
 		t.Errorf("network module missing resources:\n%s", net)
 	}
-	// same-category ref stays direct
 	if !regexp.MustCompile(`vpc_id\s*=\s*aws_vpc\.main\.id`).MatchString(net) {
 		t.Errorf("subnet vpc_id not a direct ref:\n%s", net)
 	}
 
-	// cross-category ref: db (database) -> sg (network)
 	db := read(t, dir, "modules", "database", "main.tf")
 	if !regexp.MustCompile(`var\.network_main_id`).MatchString(db) {
 		t.Errorf("db instance not wired to a module input:\n%s", db)
@@ -246,7 +235,6 @@ func TestWriteModuleLayout(t *testing.T) {
 		t.Errorf("providers.tf region missing:\n%s", prov)
 	}
 
-	// standard-structure extras
 	if !strings.Contains(read(t, dir, "README.md"), "## Layout") {
 		t.Error("root README.md missing")
 	}
@@ -264,9 +252,7 @@ func TestWriteModuleLayout(t *testing.T) {
 	}
 }
 
-// A resource outside the provider's default region needs its own `region`
-// argument (provider v6 per-resource override), or every AWS call for it --
-// import included -- goes to the default region's endpoint and 404s.
+// Out-of-region resources need an aliased provider.
 func TestWriteCrossRegionAttribute(t *testing.T) {
 	inv := model.Inventory{
 		Account: "123456789012",
@@ -283,17 +269,12 @@ func TestWriteCrossRegionAttribute(t *testing.T) {
 		t.Fatal(err)
 	}
 	net := read(t, dir, "modules", "network", "main.tf")
-	// two untagged, non-sole VPCs -> deterministic hash names (vpc_<hex>).
+	// untagged, non-sole VPCs get hash names
 	blocks := regexp.MustCompile(`(?s)resource "aws_vpc" "vpc_[0-9a-f]+" \{.*?\n\}`).FindAllString(net, -1)
 	if len(blocks) != 2 {
 		t.Fatalf("expected two vpc blocks, got %d in:\n%s", len(blocks), net)
 	}
-	// exactly one of the two carries a provider override -- whichever isn't
-	// the (majority-vote) default region -- never both, never neither. A
-	// schema `region` attribute isn't enough: it isn't consulted by the
-	// provider's ImportResourceState RPC, only a `provider = aws.<alias>`
-	// meta-argument (resolved before any RPC) reliably routes both import
-	// and ordinary reads/writes to the right region.
+	// exactly one VPC carries the provider alias
 	withProvider := 0
 	for _, b := range blocks {
 		if strings.Contains(b, "provider") {
@@ -307,13 +288,11 @@ func TestWriteCrossRegionAttribute(t *testing.T) {
 		t.Errorf("expected exactly one vpc to carry a provider argument, got %d:\n%s", withProvider, net)
 	}
 
-	// the aliased provider itself must exist in the root, pinned to that region
 	prov := read(t, dir, "providers.tf")
 	if !regexp.MustCompile(`provider "aws" \{\s*alias\s*=\s*"us_west_2"\s*\n\s*region\s*=\s*"us-west-2"`).MatchString(prov) {
 		t.Errorf("providers.tf missing the aliased us_west_2 provider:\n%s", prov)
 	}
 
-	// the network module must declare the alias and the root must pass it in
 	modProv := read(t, dir, "modules", "network", "versions.tf")
 	if !strings.Contains(modProv, "configuration_aliases") || !strings.Contains(modProv, "aws.us_west_2") {
 		t.Errorf("network module versions.tf missing configuration_aliases:\n%s", modProv)
@@ -324,10 +303,7 @@ func TestWriteCrossRegionAttribute(t *testing.T) {
 	}
 }
 
-// Two distinct resources that happen to share a bare ID (the same name reused
-// in different regions) must never wire a literal that merely matches that ID
-// into a reference -- there's no way to tell which of the two was meant, and
-// picking one silently rewires the other's config to point at it.
+// An ID shared across regions is never wired.
 func TestWireValueAmbiguousIDNotReferenced(t *testing.T) {
 	inv := model.Inventory{
 		Account: "123456789012",
@@ -355,13 +331,7 @@ func TestWireValueAmbiguousIDNotReferenced(t *testing.T) {
 	}
 }
 
-// AWS auto-creates a Cloud Map namespace for ECS Service Connect using the
-// cluster's own ID as the namespace's "name" -- confirmed against a real
-// account. That's a plain display string on
-// aws_service_discovery_http_namespace, not a link back to the cluster;
-// wiring it as one produced a real module.compute <-> module.other cycle
-// (compute legitimately depends on other for the namespace ARN via
-// service_connect_defaults.namespace).
+// A namespace named after a cluster isn't wired.
 func TestWireValueServiceDiscoveryNameNotReferenced(t *testing.T) {
 	inv := model.Inventory{
 		Account: "123456789012",
@@ -392,13 +362,7 @@ func TestWireValueServiceDiscoveryNameNotReferenced(t *testing.T) {
 	}
 }
 
-// Cross-module references into a §5.3 for_each group must share ONE output
-// (a `for` expression over the whole group) rather than minting a separate
-// single-key output per referenced member. Confirmed against a real
-// account: three subnets in one for_each group, each referenced once from
-// another module, produced three near-identical outputs
-// (public_10_1_252_0_24_id, _253_, _254_) -- exactly the duplication §5.3
-// already collapses on the locals side, just not on the outputs side.
+// Group references share one for-expression output.
 func TestForEachCrossModuleRefSharesOneOutput(t *testing.T) {
 	inv := model.Inventory{
 		Account: "123456789012", Regions: []string{"us-east-1"},
@@ -430,9 +394,7 @@ func TestForEachCrossModuleRefSharesOneOutput(t *testing.T) {
 		t.Errorf("outputs.tf does not parse: %s", d)
 	}
 
-	// consolidate() picks whichever attribute actually differentiates the
-	// group as its for_each key (here availability_zone) -- not the
-	// resource's own ID, so that's what each instance indexes by.
+	// instances index by the differentiating attribute
 	compute := read(t, dir, "modules", "compute", "main.tf")
 	if !strings.Contains(compute, `var.network_private_ids["us-east-1a"]`) ||
 		!strings.Contains(compute, `var.network_private_ids["us-east-1b"]`) {
@@ -453,17 +415,7 @@ func TestForEachCrossModuleRefSharesOneOutput(t *testing.T) {
 	}
 }
 
-// Three different for_each-consolidated resource types can legitimately
-// share the same resource block NAME within one module (Terraform
-// addresses are type-qualified: aws_iam_group_policy_attachment.policy and
-// aws_iam_role_policy_attachment.policy don't collide) -- but a `locals {}`
-// block is flat, not type-qualified. Confirmed against a real account:
-// three IAM policy-attachment types (group/role/user) all named "policy"
-// (groupBaseName hardcodes this) reduced to a single local.policy holding
-// only the last-written type's shape, so the other two for_each'd over
-// data with the wrong attributes entirely (each.value.group /
-// each.value.role referencing keys that simply didn't exist), failing
-// `terraform validate` outright.
+// Same-named groups of different types get distinct locals.
 func TestForEachLocalNameDedupedAcrossTypes(t *testing.T) {
 	mkAttachments := func(tfType string, n int, cfg func(i int) map[string]any) []model.Resource {
 		var rs []model.Resource
@@ -496,7 +448,6 @@ func TestForEachLocalNameDedupedAcrossTypes(t *testing.T) {
 
 	locals := read(t, dir, "modules", "security", "locals.tf")
 	if n := strings.Count(locals, "policy"); n < 3 {
-		// each local name should appear at least once as a declaration
 		t.Errorf("expected 3 distinct locals for 3 different policy-attachment types, got locals.tf:\n%s", locals)
 	}
 
@@ -513,9 +464,7 @@ func TestForEachLocalNameDedupedAcrossTypes(t *testing.T) {
 		t.Errorf("all 3 for_each blocks reference the SAME local -- the exact bug this guards against: %v\n%s", seen, main)
 	}
 
-	// each.value attribute access must match the resource type it's actually on.
-	// (?s) + non-greedy: [^}]* would wrongly stop at the literal "}" closing
-	// the ${...} interpolation in policy_arn, well before the block's own end.
+	// (?s) and lazy: [^}]* stops inside ${...}
 	if !regexp.MustCompile(`(?s)"aws_iam_group_policy_attachment"\s+"policy"\s*\{.*?each\.value\.group.*?\n\}`).MatchString(main) {
 		t.Errorf("group attachment should read each.value.group:\n%s", main)
 	}
@@ -534,16 +483,7 @@ func TestForEachLocalNameDedupedAcrossTypes(t *testing.T) {
 	}
 }
 
-// A name-suffix match ("_id"/"_arn") alone isn't enough to know an
-// attribute is really a foreign AWS resource reference. Confirmed against
-// a real account: aws_cloudwatch_event_target's target_id is a free-text
-// label ("AuditManagerTarget"), not an opaque id -- the suffix alone sent
-// it through hoistExternalRefs as a required, no-default root variable,
-// the same treatment a genuine foreign vpc_id gets, forcing every
-// consumer to explicitly re-supply an arbitrary label at the root for no
-// reason. A value that doesn't look like a real AWS id/ARN should get the
-// ordinary defaulted treatment instead, same as "name"; a value that DOES
-// look external must still go through the root-required path unchanged.
+// An _id suffix alone isn't a foreign ID.
 func TestHoistPlainLabelVsRealExternalID(t *testing.T) {
 	inv := model.Inventory{
 		Account: "123456789012", Regions: []string{"us-east-1"},
@@ -554,10 +494,10 @@ func TestHoistPlainLabelVsRealExternalID(t *testing.T) {
 				Config: map[string]any{
 					"rule":      "r1",
 					"arn":       "arn:aws:lambda:us-east-1:123456789012:function:f",
-					"target_id": "AuditManagerTarget", // a free-text label, not an AWS id
+					"target_id": "AuditManagerTarget", // free text
 				}},
 			{TFType: "aws_security_group", Region: "us-east-1", ID: "sg-1",
-				Config: map[string]any{"name": "web", "vpc_id": "vpc-ba627dde"}}, // a REAL foreign id
+				Config: map[string]any{"name": "web", "vpc_id": "vpc-ba627dde"}}, // real foreign ID
 		},
 	}
 	dir := t.TempDir()
@@ -565,7 +505,7 @@ func TestHoistPlainLabelVsRealExternalID(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// target_id: hoisted with its discovered value as the default, no root wiring needed.
+	// label: defaulted variable, no root wiring
 	integVars := read(t, dir, "modules", "integration", "variables.tf")
 	if !regexp.MustCompile(`variable "\w*target_id"\s*\{[^}]*default\s*=\s*"AuditManagerTarget"`).MatchString(integVars) {
 		t.Errorf("target_id (a plain label) should hoist with a default, got:\n%s", integVars)
@@ -575,7 +515,7 @@ func TestHoistPlainLabelVsRealExternalID(t *testing.T) {
 		t.Errorf("a defaulted label should never need explicit root wiring, got:\n%s", rootMain)
 	}
 
-	// vpc_id: still a required, no-default root variable -- unchanged.
+	// real ID: required root variable
 	netVars := read(t, dir, "modules", "network", "variables.tf")
 	if !strings.Contains(netVars, `variable "vpc_id"`) {
 		t.Fatalf("expected the required \"vpc_id\" variable, got:\n%s", netVars)
@@ -590,16 +530,7 @@ func TestHoistPlainLabelVsRealExternalID(t *testing.T) {
 	}
 }
 
-// A resource's own "name" is an identity label, never a pointer into
-// Terraform's graph -- even when its value happens to equal some other
-// resource's bare id. Confirmed against a real account: an
-// aws_security_group named "tailnet" collided with an aws_ecs_cluster
-// whose id is also "tailnet" (an ordinary naming coincidence, no AWS-level
-// cause), and the security group's own name got wired to
-// var.compute_tailnet_id instead of staying the literal "tailnet". A
-// second, independent case from the same class as the earlier Cloud Map
-// namespace fix (typeNoRefKeys), confirming "name" needed the general
-// fix, not another special case.
+// A resource's own name never becomes a reference.
 func TestNameNeverBecomesAReference(t *testing.T) {
 	inv := model.Inventory{
 		Account: "123456789012", Regions: []string{"us-east-1"},
@@ -607,15 +538,11 @@ func TestNameNeverBecomesAReference(t *testing.T) {
 			{TFType: "aws_ecs_cluster", Region: "us-east-1", ID: "tailnet",
 				ARN:    "arn:aws:ecs:us-east-1:123456789012:cluster/tailnet",
 				Config: map[string]any{"name": "tailnet"}},
-			// same category (compute) as the cluster -- a LEGITIMATE
-			// same-category reference via a dedicated "cluster" attribute
-			// must still wire correctly; only "name" is excluded.
+			// legitimate same-category reference via cluster
 			{TFType: "aws_ecs_service", Region: "us-east-1", ID: "tailnet/svc",
 				ARN:    "arn:aws:ecs:us-east-1:123456789012:service/tailnet/svc",
 				Config: map[string]any{"name": "svc", "cluster": "tailnet", "desired_count": float64(1)}},
-			// different category (network) -- the coincidental collision:
-			// this security group's OWN name happens to equal the
-			// cluster's id, purely by naming coincidence.
+			// SG name coincidentally equals the cluster ID
 			{TFType: "aws_security_group", Region: "us-east-1", ID: "sg-0abc1234",
 				ARN:    "arn:aws:ec2:us-east-1:123456789012:security-group/sg-0abc1234",
 				Config: map[string]any{"name": "tailnet", "description": "tailnet sg"}},
@@ -626,17 +553,12 @@ func TestNameNeverBecomesAReference(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// both are sole of their type -> "main" per the naming convention;
-	// the point here is the *reference*, not the block name.
 	compute := read(t, dir, "modules", "compute", "main.tf")
 	if !regexp.MustCompile(`cluster\s*=\s*aws_ecs_cluster\.main\.id`).MatchString(compute) {
 		t.Errorf("legitimate same-category reference (service -> cluster) should still wire correctly:\n%s", compute)
 	}
 
-	// the security group's "name" is still hoisted (the ordinary, unrelated
-	// hoistAttrs behavior -- ANY resource's "name" becomes var.<x>_name
-	// with a default) but that default must be its own literal "tailnet",
-	// never a cross-module reference to the cluster.
+	// name is hoisted, defaulting to its own literal
 	netVars := read(t, dir, "modules", "network", "variables.tf")
 	if !regexp.MustCompile(`variable "security_group_name"\s*\{[^}]*default\s*=\s*"tailnet"`).MatchString(netVars) {
 		t.Errorf("security group name should hoist with its own literal default \"tailnet\":\n%s", netVars)
@@ -650,9 +572,7 @@ func TestNameNeverBecomesAReference(t *testing.T) {
 	}
 }
 
-// aws_cloudfront_distribution.aliases (custom domain names) is a genuine
-// per-deployment knob -- confirmed against a real account -- but hoist()
-// was scalar-only, so it never got lifted into a variable at all.
+// List-valued knobs like aliases get hoisted too.
 func TestHoistListAttr(t *testing.T) {
 	inv := model.Inventory{
 		Account: "123456789012", Regions: []string{"us-east-1"},

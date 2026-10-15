@@ -8,7 +8,6 @@ import (
 	"github.com/virtualbeck/inherit/model"
 )
 
-// rootReadme describes the generated project.
 func rootReadme(inv model.Inventory, mods map[string]*modBuild, blocks int, defaultTags map[string]string) string {
 	cats := make([]string, 0, len(mods))
 	for c := range mods {
@@ -63,7 +62,7 @@ func rootReadme(inv model.Inventory, mods map[string]*modBuild, blocks int, defa
 func moduleReadme(cat string, m *modBuild) string {
 	var types []string
 	seen := map[string]bool{}
-	// crude: pull `resource "type"` lines from the rendered body
+	// crude: scrape resource lines from the body
 	for line := range strings.SplitSeq(string(m.body.Bytes()), "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, `resource "`) {
@@ -88,10 +87,7 @@ func moduleReadme(cat string, m *modBuild) string {
 	return b.String()
 }
 
-// backendTF returns the commented S3-backend skeleton, with its example
-// state key namespaced by account, and by environment too when the caller
-// supplied one (internal/cli always does; a direct emit.Write caller with an
-// empty Environment gets the flat, account-only key instead).
+// backendTF: commented S3 backend, keyed by account/environment.
 func backendTF(account, environment string) string {
 	key := account + "/terraform.tfstate"
 	if environment != "" {

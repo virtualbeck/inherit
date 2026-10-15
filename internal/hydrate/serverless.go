@@ -30,14 +30,12 @@ func hydrateLambdaFunction(ctx context.Context, c *Clients, r model.Resource) (m
 	if err != nil {
 		return nil, err
 	}
-	// Configuration holds the settable knobs; Code is a URL we can't reproduce.
+	// Code is a URL we can't reproduce
 	cfg, err := Generic(out.Configuration, sch, nil)
 	if err != nil {
 		return nil, err
 	}
-	// The provider requires a code source (filename / s3_bucket / image_uri).
-	// For container images we have the URI; for zip packages the deployment
-	// artifact is not recoverable, so emit.Write drops in a placeholder.
+	// image URI kept; zips get a placeholder
 	if string(out.Configuration.PackageType) == "Image" {
 		cfg["package_type"] = "Image"
 		delete(cfg, "runtime")
@@ -46,16 +44,9 @@ func hydrateLambdaFunction(ctx context.Context, c *Clients, r model.Resource) (m
 			cfg["image_uri"] = aws.ToString(out.Code.ImageUri)
 		}
 	}
-	// publish is a provider-side directive (whether apply should publish a new
-	// version), not a real attribute of GetFunction; AWS has no notion of it.
-	// Pin it to the provider default so the plan doesn't offer to "add" it.
+	// provider directive; pin its default
 	cfg["publish"] = false
-	// layers is list(string) of layer ARNs in the schema, but
-	// Configuration.Layers is []Layer{Arn, CodeSize, ...} -- Generic() has no
-	// way to know to project down to just Arn, so it passed the raw objects
-	// through untouched. Any function with a layer attached (very common:
-	// observability agents, shared deps) would emit a list of objects where
-	// the provider expects strings.
+	// project Layer structs down to ARNs
 	if len(out.Configuration.Layers) > 0 {
 		layers := make([]any, len(out.Configuration.Layers))
 		for i, l := range out.Configuration.Layers {
@@ -65,10 +56,7 @@ func hydrateLambdaFunction(ctx context.Context, c *Clients, r model.Resource) (m
 	} else {
 		delete(cfg, "layers")
 	}
-	// Generic() drops snap_start when Configuration.SnapStart is nil (container
-	// images, and some older/unsupported runtimes never populate it). AWS
-	// still accepts the no-op default explicitly, so fall back to it rather
-	// than omitting the block.
+	// nil SnapStart: emit the no-op default
 	if _, ok := cfg["snap_start"]; !ok {
 		applyOn := "None"
 		if out.Configuration.SnapStart != nil {
@@ -116,7 +104,7 @@ func hydrateLambdaLayerVersion(ctx context.Context, c *Clients, r model.Resource
 	if v := aws.ToString(out.LicenseInfo); v != "" {
 		cfg["license_info"] = v
 	}
-	// the layer payload itself is not recoverable; emit.Write drops in a placeholder
+	// layer payload isn't recoverable
 	return cfg, nil
 }
 

@@ -10,9 +10,7 @@ import (
 	"github.com/virtualbeck/inherit/model"
 )
 
-// TestWriteTofuValidate renders a spread of resource types and, when tofu or
-// terraform is on PATH, actually runs `init -backend=false` + `validate` on the
-// output. Skipped otherwise (CI has no provider mirror).
+// Renders many types and runs tofu validate.
 func TestWriteTofuValidate(t *testing.T) {
 	if os.Getenv("INHERIT_INTEGRATION") == "" {
 		t.Skip("set INHERIT_INTEGRATION=1 to run (needs tofu/terraform + provider download)")
@@ -46,12 +44,7 @@ func TestWriteTofuValidate(t *testing.T) {
 				Config: map[string]any{"vpc_id": "vpc-1", "route": []any{
 					map[string]any{"cidr_block": "0.0.0.0/0", "gateway_id": "igw-1"},
 				}}},
-			// mixes every ingress/egress shape hydrateNetworkACL produces:
-			// no port range (protocol "-1"), a real TCP port range, an ICMP
-			// type/code pair, and an IPv6-only rule -- from_port/to_port/
-			// icmp_type/icmp_code are all Required within the object type
-			// (a real number, not null, unlike cidr_block/ipv6_cidr_block
-			// which accept null), so this catches a regression either way.
+			// every rule shape hydrateNetworkACL produces
 			{TFType: "aws_network_acl", Region: "us-east-1", ID: "acl-1",
 				Config: map[string]any{"vpc_id": "vpc-1",
 					"ingress": []any{
@@ -64,22 +57,14 @@ func TestWriteTofuValidate(t *testing.T) {
 						map[string]any{"rule_no": float64(103), "action": "allow", "protocol": "-1",
 							"ipv6_cidr_block": "::/0", "from_port": int32(0), "to_port": int32(0), "icmp_type": int32(0), "icmp_code": int32(0)},
 					}}},
-			// the retype-sentinel path (a VPC's default network ACL): a
-			// different identifying attribute (default_network_acl_id, not
-			// vpc_id -- vpc_id is computed-only here) and rules modeled as
-			// real nested blocks rather than an object-typed collection, but
-			// the same rule-building shape from hydrateNetworkACL works for
-			// both since writeBlock dispatches on the schema, not the data.
+			// retyped default NACL: different ID attribute
 			{TFType: "aws_default_network_acl", Region: "us-east-1", ID: "acl-default-1",
 				Config: map[string]any{"default_network_acl_id": "acl-default-1",
 					"ingress": []any{
 						map[string]any{"rule_no": float64(100), "action": "allow", "protocol": "-1",
 							"cidr_block": "0.0.0.0/0", "from_port": int32(0), "to_port": int32(0)},
 					}}},
-			// SecureString (placeholder value, never a real secret) and a
-			// plain String (real recoverable value) -- the provider requires
-			// exactly one of value/insecure_value/value_wo on every
-			// aws_ssm_parameter regardless of type.
+			// exactly one of value/insecure_value is required
 			{TFType: "aws_ssm_parameter", Region: "us-east-1", ID: "/app/db/password",
 				Config: map[string]any{"name": "/app/db/password", "type": "SecureString", "value": "REPLACE_ME (inherit does not read SecureString values)"}},
 			{TFType: "aws_ssm_parameter", Region: "us-east-1", ID: "/app/config",
@@ -108,9 +93,7 @@ func TestWriteTofuValidate(t *testing.T) {
 			{TFType: "aws_lambda_function", Region: "us-east-1", ID: "fn-1",
 				Config: map[string]any{"function_name": "fn-1", "role": "arn:aws:iam::123456789012:role/r1",
 					"handler": "index.handler", "runtime": "python3.12"}},
-			// Redacted values (internal/redact) must still validate: each
-			// lands under ignore_changes, whole-value placeholders in
-			// format-checked attributes (base64) are left out of config.
+			// redacted values must still validate
 			{TFType: "aws_lambda_function", Region: "us-east-1", ID: "fn-redacted",
 				Config: map[string]any{"function_name": "fn-redacted", "role": "arn:aws:iam::123456789012:role/r1",
 					"handler": "index.handler", "runtime": "python3.12",
@@ -154,8 +137,7 @@ func TestWriteTofuValidate(t *testing.T) {
 				Config: map[string]any{"alarm_name": "cpu", "comparison_operator": "GreaterThanThreshold", "evaluation_periods": float64(1),
 					"metric_name": "CPUUtilization", "namespace": "AWS/EC2", "period": float64(300), "statistic": "Average", "threshold": float64(80),
 					"dimensions": map[string]any{"InstanceId": "i-abc"},
-					// forces cross-module wiring (observability -> integration), which
-					// generates an input `variable` block: guards the type-constraint form
+					// forces cross-module wiring and an input variable
 					"alarm_actions": []any{"arn:aws:sns:us-east-1:123456789012:alerts"}}},
 			{TFType: "aws_sns_topic", Region: "us-east-1", ID: "arn:aws:sns:us-east-1:123456789012:alerts",
 				ARN:    "arn:aws:sns:us-east-1:123456789012:alerts",
@@ -182,14 +164,10 @@ func TestWriteTofuValidate(t *testing.T) {
 					"restrictions":       map[string]any{"geo_restriction": map[string]any{"restriction_type": "none"}},
 					"viewer_certificate": map[string]any{"cloudfront_default_certificate": true},
 				}},
-			// a resource outside the default region: exercises the aliased
-			// provider + module `providers = {...}` passthrough end to end.
+			// outside the default region: aliased provider
 			{TFType: "aws_vpc", Region: "us-west-2", ID: "vpc-2",
 				Config: map[string]any{"cidr_block": "10.9.0.0/16"}},
-			// same-region ARN literal on an aliased resource: must parameterize
-			// through data.aws_region.us_west_2 (itself aliased), not .current
-			// (which would resolve via the module's default us-east-1 provider
-			// and corrupt the ARN's region segment).
+			// must use the aliased aws_region, not current
 			{TFType: "aws_kms_key", Region: "us-west-2", ID: "key-1",
 				ARN:    "arn:aws:kms:us-west-2:123456789012:key/key-1",
 				Config: map[string]any{"description": "test"}},
@@ -211,10 +189,7 @@ func TestWriteTofuValidate(t *testing.T) {
 					},
 					"tags": map[string]string{"Team": "platform"},
 				}},
-			// deletion_protection / idle_timeout / http2 / drop_invalid_header_fields:
-			// these live behind a separate DescribeLoadBalancerAttributes call the
-			// hydrator didn't make at all before, so config always omitted them --
-			// a real ALB with any of these non-default showed a spurious diff.
+			// attributes from DescribeLoadBalancerAttributes
 			{TFType: "aws_lb", Region: "us-east-1", ID: "app/lb-1/abc",
 				ARN: "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/lb-1/abc",
 				Config: map[string]any{
@@ -223,10 +198,7 @@ func TestWriteTofuValidate(t *testing.T) {
 					"enable_deletion_protection": true, "idle_timeout": float64(60),
 					"enable_http2": true, "drop_invalid_header_fields": true,
 				}},
-			// default_action now reuses lbActions/lbForward (aws_lb_rules.go) so a
-			// listener with stickiness or multiple target groups gets its real
-			// forward{ target_group / stickiness } block instead of the old
-			// hand-rolled loop, which only ever emitted target_group_arn.
+			// forward block with stickiness and weights
 			{TFType: "aws_lb_listener", Region: "us-east-1", ID: "app/lb-1/abc/def",
 				ARN: "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/lb-1/abc/def",
 				Config: map[string]any{
@@ -253,8 +225,7 @@ func TestWriteTofuValidate(t *testing.T) {
 							"target_group_arn": "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/tg-1/abc"},
 					},
 				}},
-			// user_data isn't part of DescribeInstances -- a separate
-			// DescribeInstanceAttribute call the hydrator didn't make at all.
+			// user_data comes from DescribeInstanceAttribute
 			{TFType: "aws_instance", Region: "us-east-1", ID: "i-1",
 				Config: map[string]any{
 					"instance_type": "t3.micro", "ami": "ami-123",
@@ -282,12 +253,7 @@ func TestWriteTofuValidate(t *testing.T) {
 						map[string]any{"vpc_id": "vpc-1", "vpc_region": "us-east-1"},
 					},
 				}},
-			// schema[] and email_configuration.from_email_address are the two
-			// fields Generic()'s filterNested silently dropped on a real pool
-			// (whole-block-drop-on-missing-Required-subattr, the same failure
-			// mode already seen on aws_cloudfront_vpc_origin); rebuilt explicitly
-			// now, along with software_token_mfa_configuration which has no
-			// DescribeUserPool equivalent at all.
+			// fields filterNested used to drop
 			{TFType: "aws_cognito_user_pool", Region: "us-east-1", ID: "pool-1",
 				Config: map[string]any{
 					"name":              "pool-1",
@@ -311,10 +277,7 @@ func TestWriteTofuValidate(t *testing.T) {
 						"access_token": "minutes", "id_token": "minutes", "refresh_token": "days",
 					},
 				}},
-			// tier-1 fanout additions: exercise the trickiest hand-built
-			// nested shapes (finding_criteria's converted map->set-of-object,
-			// condition/selection_tag, task_invocation_parameters' union,
-			// object lock / intelligent tiering / ACL's owner+grant shape).
+			// tricky hand-built nested shapes from fanouts
 			{TFType: "aws_guardduty_filter", ID: "detector-1:my-filter", ImportID: "detector-1:my-filter",
 				Config: map[string]any{
 					"name": "my-filter", "detector_id": "detector-1", "action": "ARCHIVE", "rank": int32(1),
@@ -523,8 +486,7 @@ func TestWriteTofuValidate(t *testing.T) {
 					"final_bake_time_in_minutes": int32(10), "growth_factor": float64(10),
 					"growth_type": "LINEAR", "replicate_to": "NONE",
 				}},
-			// exercises actions/notification_property/event_batching_condition/
-			// predicate+conditions all through Generic() at once.
+			// many nested blocks through Generic() at once
 			{TFType: "aws_glue_trigger", ID: "trig-1", ImportID: "trig-1",
 				Config: map[string]any{
 					"name": "trig-1", "type": "CONDITIONAL", "enabled": true,
@@ -555,8 +517,7 @@ func TestWriteTofuValidate(t *testing.T) {
 					"name": "cfg-1", "server_properties": "auto.create.topics.enable=true",
 					"kafka_versions": []any{"3.5.1"},
 				}},
-			// no arn/tags support at all -- reference_name is create-only
-			// (never read back), so an empty block is the correct, real shape.
+			// reference_name is create-only; empty is correct
 			{TFType: "aws_route53_delegation_set", ID: "N1PA6795SAMPLE", ImportID: "N1PA6795SAMPLE",
 				Config: map[string]any{}},
 			{TFType: "aws_sfn_activity", ID: "act-1", ImportID: "act-1",
@@ -1088,10 +1049,7 @@ func TestWriteTofuValidate(t *testing.T) {
 	run("init", "-backend=false", "-input=false", "-no-color")
 	run("validate", "-no-color")
 
-	// --fast-import's override files, generated against this same real
-	// (schema-driven, every resource type in the spread above) output, must
-	// not break validation either -- and removing them must cleanly restore
-	// the pre-override state.
+	// override files must validate and remove cleanly
 	overridePaths, err := WriteImportOverrides(dir, res.Imports)
 	if err != nil {
 		t.Fatalf("WriteImportOverrides: %v", err)

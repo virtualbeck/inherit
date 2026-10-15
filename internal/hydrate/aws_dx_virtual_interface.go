@@ -11,13 +11,7 @@ import (
 
 func init() { register("aws_dx_private_virtual_interface", hydrateDXVirtualInterface) }
 
-// hydrateDXVirtualInterface dispatches on VirtualInterfaceType: private,
-// public, and transit virtual interfaces all share the same ARN resource
-// segment ("dxvif", by convention with the already-covered
-// aws_dx_connection's "dxcon" -- DescribeTags takes ARNs directly, so a real
-// ARN convention exists here even though DescribeVirtualInterfaces' own
-// response never echoes one back). Transit isn't a currently-covered
-// Terraform type, so that case is left unhandled.
+// VIF types share an ARN segment; transit unhandled.
 func hydrateDXVirtualInterface(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	id := r.ID
 	out, err := directconnect.NewFromConfig(c.Cfg(r.Region)).DescribeVirtualInterfaces(ctx, &directconnect.DescribeVirtualInterfacesInput{VirtualInterfaceId: &id})

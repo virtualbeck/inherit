@@ -22,12 +22,7 @@ func init() {
 	register("aws_wafv2_regex_pattern_set", hydrateWAFRegexSet)
 }
 
-// vpc_origin_endpoint_config is a Required block (the provider rejects the
-// resource outright without one) -- built explicitly rather than through
-// Generic(), whose nested-block handling treats a block as valid only if
-// every one of its Required sub-attributes survived pruning, dropping the
-// entire block otherwise with nothing to say why. Building it directly
-// guarantees the block a Required block needs is always present.
+// Required block built explicitly; Generic() could drop it.
 func hydrateCloudFrontVpcOrigin(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	out, err := cloudfront.NewFromConfig(c.Cfg("us-east-1")).GetVpcOrigin(ctx, &cloudfront.GetVpcOriginInput{Id: &r.ID})
 	if err != nil {
@@ -57,9 +52,6 @@ func hydrateCloudFrontVpcOrigin(ctx context.Context, c *Clients, r model.Resourc
 	return map[string]any{"vpc_origin_endpoint_config": endpointCfg}, nil
 }
 
-// aws_cloudfront_distribution is one large resource with several required nested
-// blocks (origin, default_cache_behavior, restrictions, viewer_certificate).
-// GetDistribution returns all of it in DistributionConfig.
 func hydrateCloudFront(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	out, err := cloudfront.NewFromConfig(c.Cfg("us-east-1")).GetDistribution(ctx, &cloudfront.GetDistributionInput{Id: &r.ID})
 	if err != nil {
@@ -309,7 +301,7 @@ func cfBehavior(b cftypes.CacheBehavior) map[string]any {
 	if b.TrustedKeyGroups != nil && len(b.TrustedKeyGroups.Items) > 0 {
 		m["trusted_key_groups"] = toAny(b.TrustedKeyGroups.Items)
 	}
-	// the provider requires exactly one of cache_policy_id or forwarded_values
+	// exactly one of cache_policy_id or forwarded_values
 	if aws.ToString(b.CachePolicyId) == "" {
 		fv := map[string]any{"query_string": false, "cookies": map[string]any{"forward": "none"}}
 		if b.ForwardedValues != nil {
@@ -377,7 +369,7 @@ func appendAny(m map[string]any, key string, v any) {
 }
 
 func hydrateGAAccelerator(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
-	// Global Accelerator is a global service fronted from us-west-2.
+	// Global Accelerator's API lives in us-west-2
 	arn := r.ARN
 	out, err := globalaccelerator.NewFromConfig(c.Cfg("us-west-2")).DescribeAccelerator(ctx, &globalaccelerator.DescribeAcceleratorInput{AcceleratorArn: &arn})
 	if err != nil {
@@ -439,9 +431,7 @@ func hydrateWAFRegexSet(ctx context.Context, c *Clients, r model.Resource) (map[
 	return cfg, nil
 }
 
-// parseWAFArn pulls the id, name and scope out of a discovered wafv2 resource.
-// The ARN resource segment is "<scope>/<kind>/<name>/<id>", so r.Type holds the
-// scope word and r.ID holds "<kind>/<name>/<id>".
+// ARN resource: <scope>/<kind>/<name>/<id>.
 func parseWAFArn(r model.Resource) (id, name string, scope wafv2types.Scope) {
 	scope = wafv2types.ScopeRegional
 	if r.Type == "global" {

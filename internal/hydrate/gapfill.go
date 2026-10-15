@@ -9,36 +9,21 @@ import (
 	"github.com/virtualbeck/inherit/model"
 )
 
-// GapFiller discovers resource types the Resource Groups Tagging API does not
-// return (application auto scaling targets, ...). It returns fully-formed
-// resources: TFType, Config and ImportID all set.
+// GapFiller finds what the Tagging API misses.
 type GapFiller func(ctx context.Context, c *Clients, region string) ([]model.Resource, error)
 
 var gapFillers []GapFiller
 
-// globalGapFillers are for account-global services (IAM, ...): registered
-// separately from gapFillers because they must run exactly once regardless
-// of how many regions are scanned, not once per (region x filler) like a
-// regional gap-filler -- IAM's ListRoles/ListUsers/etc. return the same
-// complete, region-agnostic list no matter which region the client is
-// configured for, so running them per-region would silently duplicate
-// every result N times (once per scanned region) with no de-dup anywhere
-// downstream to catch it.
+// Region-agnostic fillers run once, or results duplicate.
 var globalGapFillers []GapFiller
 
-// gapFillConcurrency bounds the (region x filler) jobs. It's higher than
-// hydration's limit because the jobs are almost all different service
-// endpoints in different regions, each with its own API rate limit, and
-// nearly every one is a single cheap call: the run is round-trip bound.
+// Distinct endpoints with separate rate limits.
 const gapFillConcurrency = 64
 
 func registerGapFiller(f GapFiller)       { gapFillers = append(gapFillers, f) }
 func registerGlobalGapFiller(f GapFiller) { globalGapFillers = append(globalGapFillers, f) }
 
-// runGapFillers runs every registered gap-filler across the inventory's regions
-// (each global filler exactly once, using the first scanned region only to
-// build a client -- the call itself is region-agnostic) and appends what they
-// find. Concurrent over (region x filler), at most concurrency at a time.
+// Global fillers run once, using the first region.
 func runGapFillers(ctx context.Context, c *Clients, inv *model.Inventory, concurrency int) []error {
 	type job struct {
 		region string

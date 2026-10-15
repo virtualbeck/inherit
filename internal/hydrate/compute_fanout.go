@@ -14,8 +14,6 @@ func init() {
 	registerFanout("aws_autoscaling_group", fanoutASGExtras)
 }
 
-// fanoutASGExtras emits scaling policies, scheduled actions and lifecycle hooks
-// of an auto scaling group.
 func fanoutASGExtras(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	cl := autoscaling.NewFromConfig(c.Cfg(parent.Region))
 	asg := parent.ID
@@ -47,12 +45,7 @@ func fanoutASGExtras(ctx context.Context, c *Clients, parent model.Resource) ([]
 			if p.MinAdjustmentMagnitude != nil {
 				cfg["min_adjustment_magnitude"] = *p.MinAdjustmentMagnitude
 			}
-			// TargetTrackingConfiguration/StepAdjustments are the actual scaling
-			// rule for a "TargetTrackingScaling"/"StepScaling" policy -- without
-			// it, config for a target-tracking policy (the common case in real
-			// accounts, e.g. CPU-utilization based scaling) is missing its one
-			// Required block entirely. PredictiveScalingConfiguration (a third,
-			// rarer policy type) is not handled here.
+			// the policy's required rule block; predictive unhandled
 			if tt := p.TargetTrackingConfiguration; tt != nil {
 				ttm := map[string]any{}
 				if tt.TargetValue != nil {

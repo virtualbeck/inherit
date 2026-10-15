@@ -13,10 +13,7 @@ func init() {
 	registerFanout("aws_lb_listener", fanoutListenerRules)
 }
 
-// fanoutListenerRules turns every non-default rule of a listener into a
-// standalone aws_lb_listener_rule (already a top-level resource in the
-// provider). The rule ARN is the import id; listener_arn and target group
-// ARNs wire back through the normal reference machinery.
+// Non-default rules become aws_lb_listener_rule.
 func fanoutListenerRules(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	out, err := elb.NewFromConfig(c.Cfg(parent.Region)).DescribeRules(ctx, &elb.DescribeRulesInput{ListenerArn: &parent.ARN})
 	if err != nil {
@@ -53,13 +50,7 @@ func fanoutListenerRules(ctx context.Context, c *Clients, parent model.Resource)
 	return kids, nil
 }
 
-// lbListenerCertificates emits the listener's *additional* (non-default) SNI
-// certificates as aws_lb_listener_certificate. The default certificate is
-// already set as aws_lb_listener.certificate_arn (hydrateListener,
-// aws_elbv2.go, from Listener.Certificates[0] directly) -- redeclaring it
-// here too would assert the same real fact from two resources. Import id is
-// "<listener_arn>_<certificate_arn>" -- underscore-joined, not comma like
-// aws_lb_target_group_attachment.
+// Extra SNI certs; the listener holds the default.
 func lbListenerCertificates(ctx context.Context, c *Clients, parent model.Resource) []model.Resource {
 	out, err := elb.NewFromConfig(c.Cfg(parent.Region)).DescribeListenerCertificates(ctx, &elb.DescribeListenerCertificatesInput{
 		ListenerArn: &parent.ARN,
@@ -90,10 +81,7 @@ func lbListenerCertificates(ctx context.Context, c *Clients, parent model.Resour
 	return kids
 }
 
-// lbRuleTags reads a listener rule's tags -- DescribeRules doesn't return
-// them, and the fanout otherwise never set cfg["tags"] at all, so the
-// provider's own tag read on the first plan after import showed every real
-// tag being removed.
+// DescribeRules omits tags.
 func lbRuleTags(ctx context.Context, c *Clients, region, ruleARN string) map[string]string {
 	out, err := elb.NewFromConfig(c.Cfg(region)).DescribeTags(ctx, &elb.DescribeTagsInput{ResourceArns: []string{ruleARN}})
 	if err != nil || len(out.TagDescriptions) == 0 {
@@ -178,16 +166,7 @@ func lbActions(as []elbtypes.Action) []any {
 	return out
 }
 
-// lbForward always builds the forward{} block when the API returns a
-// ForwardConfig, even for a single target group with stickiness disabled.
-// AWS mirrors that single-target case into the legacy target_group_arn
-// field too (provider docs: "Can be specified with forward but ARNs must
-// match"), and a real listener's Read populates both simultaneously --
-// setting only one of the two leaves the other showing as a permanent diff.
-// duration is Required and range-checked (1-604800) by the provider even
-// when stickiness is disabled; AWS returns a real 0 duration for a disabled
-// config, which the provider's validator rejects outright if echoed back,
-// so it's floored to 1.
+// Always emit forward; floor stickiness duration to 1.
 func lbForward(a elbtypes.Action, act map[string]any) map[string]any {
 	fc := a.ForwardConfig
 	if fc == nil {

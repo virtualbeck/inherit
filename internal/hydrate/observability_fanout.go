@@ -50,8 +50,7 @@ func fanoutLogFilters(ctx context.Context, c *Clients, parent model.Resource) ([
 				Service: "logs", Type: "metric-filter", TFType: "aws_cloudwatch_log_metric_filter",
 				Region: parent.Region, Account: parent.Account,
 				ID: aws.ToString(f.FilterName),
-				// the provider imports by "log-group-name:filter-name",
-				// not the bare filter name.
+				// import ID is log-group-name:filter-name
 				ImportID: grp + ":" + aws.ToString(f.FilterName),
 				Config:   cfg,
 			})

@@ -12,13 +12,7 @@ import (
 	"github.com/virtualbeck/inherit/model"
 )
 
-// stressTemplate is one resource of each of the ~30 most structurally
-// diverse covered types (real nested blocks, cross-resource references,
-// multi-region candidates), reused as a stamp: TestStressLargeInventory
-// replicates it N times across many regions/accounts to build a synthetic
-// inventory far larger than any account this project has actually been run
-// against (the biggest real run on record is 524 resources). Templates use
-// "%d" where a unique value is needed.
+// ~30 structurally diverse types, stamped out repeatedly.
 func stressTemplate() []model.Resource {
 	return []model.Resource{
 		{TFType: "aws_vpc", ID: "vpc-%d", Tags: map[string]string{"Name": "vpc-%d"},
@@ -101,9 +95,7 @@ func stressTemplate() []model.Resource {
 	}
 }
 
-// expand replaces every "%d" in a template's ID/ImportID/Tags/Config with n,
-// and every "%012d" with a synthetic 12-digit account id, deep-copying maps
-// and slices so replicas never alias each other's mutable state.
+// expand fills %d placeholders, deep-copying maps and slices.
 func expand(tpl model.Resource, region string, account string, n int) model.Resource {
 	r := tpl
 	r.Region = region
@@ -124,12 +116,7 @@ func sprintfAll(s string, n int) string {
 	if s == "" {
 		return s
 	}
-	// crude but sufficient: replace the three placeholder shapes used above.
-	// %3d must be handled before the generic %d pass (it's a prefix of it),
-	// and produces a single valid IPv4 octet (0-255) for synthetic CIDRs --
-	// the bare %d version overflowed past 255 at n>255 and every "tofu
-	// validate" past the first ~255 resources failed on an invalid CIDR,
-	// caught by this stress test's own first real run.
+	// %3d first: it's a prefix of %d
 	out := s
 	for {
 		i := indexOf(out, "%012d")
@@ -191,13 +178,7 @@ func expandValue(v any, n int) any {
 	}
 }
 
-// TestStressLargeInventory replicates stressTemplate across many synthetic
-// resources and regions, timing emit.Write and (when tofu/terraform is on
-// PATH) a real init+validate+plan against the result. Sizes are chosen to
-// go well past the biggest account this project has actually seen (524
-// resources) into territory nothing here has ever been run against.
-// Skipped by default -- set INHERIT_STRESS=1 (needs INHERIT_INTEGRATION=1
-// too for the tofu phase, since that needs a provider download/plugin cache).
+// Times emit (and validate) on large synthetic inventories.
 func TestStressLargeInventory(t *testing.T) {
 	if os.Getenv("INHERIT_STRESS") == "" {
 		t.Skip("set INHERIT_STRESS=1 to run (writes large synthetic projects, can take a while)")
@@ -274,13 +255,7 @@ func TestStressLargeInventory(t *testing.T) {
 				return
 			}
 
-			// no further than validate: plan would need to resolve
-			// data.aws_caller_identity.current (a real STS call) since
-			// nearly every resource's ARN-embedded account id routes
-			// through it -- validate doesn't evaluate data sources at all,
-			// which is exactly why the existing integration test
-			// (TestWriteTofuValidate) stops there too, not because plan
-			// wasn't worth timing.
+			// validate only: plan would need real STS calls
 			run := func(name string, args ...string) time.Duration {
 				t.Helper()
 				cmd := exec.Command(bin, args...)

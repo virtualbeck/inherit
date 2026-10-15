@@ -10,10 +10,6 @@ import (
 
 func init() { registerGlobalGapFiller(gapFillRoute53CIDRCollections) }
 
-// gapFillRoute53CIDRCollections discovers CIDR collections (used by
-// aws_route53_record's cidr_routing_policy) and the CIDR blocks grouped
-// under each of their named locations -- a global Route53 feature, no ARN
-// tagging concept for either type.
 func gapFillRoute53CIDRCollections(ctx context.Context, c *Clients, _ string) ([]model.Resource, error) {
 	cl := route53.NewFromConfig(c.Cfg(""))
 	var out []model.Resource
@@ -44,10 +40,7 @@ func gapFillRoute53CIDRCollections(ctx context.Context, c *Clients, _ string) ([
 	return out, nil
 }
 
-// route53CIDRLocations groups one collection's CIDR blocks by location name
-// -- ListCidrBlocks returns a flat {cidr_block, location_name} list, but the
-// schema wants one aws_route53_cidr_location per location with a set of its
-// blocks.
+// Groups CIDR blocks per location.
 func route53CIDRLocations(ctx context.Context, cl *route53.Client, collectionID string) []model.Resource {
 	byLocation := map[string][]string{}
 	var order []string

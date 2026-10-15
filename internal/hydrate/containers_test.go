@@ -7,11 +7,7 @@ import (
 	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
 )
 
-// managed_instances_provider maps onto the schema almost entirely by SDK
-// field name -- the one thing that breaks it is nameconv.Snake mishandling
-// VCpu/MiB/GiB acronyms (VCpuCount -> v_cpu_count instead of vcpu_count).
-// This exercises the real nested path end to end, not just the isolated
-// Snake() cases.
+// VCpu/MiB/GiB acronyms through the real nested path.
 func TestManagedInstancesProviderShape(t *testing.T) {
 	sch, err := schemaFor("aws_ecs_capacity_provider")
 	if err != nil {

@@ -128,13 +128,7 @@ func hydrateGlueDB(ctx context.Context, c *Clients, r model.Resource) (map[strin
 	return cfg, nil
 }
 
-// hydrateAthenaWG needs overrides: the SDK's EnforceWorkGroupConfiguration /
-// PublishCloudWatchMetricsEnabled mechanically snake-case to
-// "enforce_work_group_configuration" / "publish_cloud_watch_metrics_enabled"
-// ("WorkGroup"/"CloudWatch" as two words), one underscore short of the
-// schema's "enforce_workgroup_configuration" / "publish_cloudwatch_metrics_enabled"
-// (one word each). overrides applies at every nesting depth, so both work
-// from the same top-level call.
+// SDK splits WorkGroup/CloudWatch; the schema doesn't.
 func hydrateAthenaWG(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	sch, err := schemaFor("aws_athena_workgroup")
 	if err != nil {
@@ -204,8 +198,7 @@ func hydrateOpenSearch(ctx context.Context, c *Clients, r model.Resource) (map[s
 			"volume_size": aws.ToInt32(eb.VolumeSize),
 			"volume_type": string(eb.VolumeType),
 		}
-		// only gp3/provisioned-iops volumes carry these; AWS returns 0 for
-		// volume types that don't support them.
+		// AWS returns 0 where unsupported
 		if eb.Iops != nil && *eb.Iops > 0 {
 			ebs["iops"] = *eb.Iops
 		}
@@ -253,8 +246,7 @@ func hydrateOpenSearch(ctx context.Context, c *Clients, r model.Resource) (map[s
 		if aso.InternalUserDatabaseEnabled != nil {
 			m["internal_user_database_enabled"] = *aso.InternalUserDatabaseEnabled
 		}
-		// master_user_options (the admin username/password or IAM ARN) is
-		// never returned by DescribeDomain -- no AWS-side data at all.
+		// master_user_options is never returned
 		cfg["advanced_security_options"] = m
 	}
 	if vpc := d.VPCOptions; vpc != nil {
@@ -325,9 +317,7 @@ func hydrateMWAAEnvironment(ctx context.Context, c *Clients, r model.Resource) (
 	if err != nil {
 		return nil, err
 	}
-	// airflow_configuration_options can carry sensitive values (DB
-	// connection strings, secrets) -- deliberately never written into
-	// generated config.
+	// may hold secrets; never emitted
 	delete(cfg, "airflow_configuration_options")
 	return cfg, nil
 }

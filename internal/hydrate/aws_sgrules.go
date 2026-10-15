@@ -14,9 +14,7 @@ func init() {
 	registerFanout("aws_security_group", fanoutSGRules)
 }
 
-// fanoutSGRules turns each rule of a security group into a standalone
-// aws_vpc_security_group_(ingress|egress)_rule. AWS assigns each rule an
-// sgr-* id, which is exactly what `terraform import` wants.
+// Each rule becomes a standalone sgr-* resource.
 func fanoutSGRules(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	out, err := ec2.NewFromConfig(c.Cfg(parent.Region)).DescribeSecurityGroupRules(ctx, &ec2.DescribeSecurityGroupRulesInput{
 		Filters: []ec2types.Filter{{Name: aws.String("group-id"), Values: []string{parent.ID}}},

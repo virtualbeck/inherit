@@ -14,51 +14,26 @@ import (
 	"github.com/zclconf/go-cty/cty"
 )
 
-// fgroup is a set of same-type, same-category resources whose configurations
-// are identical except along a small number of simple scalar/list/map
-// attributes -- emitted as ONE `resource` block with `for_each` over a
-// `local` map instead of N near-duplicate blocks (spec §5.3). N subnets
-// across AZs, N of the same SG for different CIDRs, N near-identical IAM
-// policies: one block, keyed by a stable string (the AZ, the CIDR, the
-// name), never subnet_1 / subnet_2 / subnet_3.
+// fgroup: near-identical resources emitted as one for_each.
 type fgroup struct {
 	cat    string
 	tfType string
-	name   string // the shared logical name (aws_subnet.private)
-	// localName is the group's `local.X` map name -- set by Write() after
-	// consolidate() returns. Defaults to name, but a `locals {}` block is
-	// flat and NOT type-qualified the way a resource address is: two
-	// groups of DIFFERENT tf types legitimately share the same name (two
-	// resource blocks named "policy" don't collide -- their types differ),
-	// but if left as name, both would resolve to the same local.policy,
-	// silently clobbering one group's for_each data with the other's.
-	// Confirmed against a real account: aws_iam_group_policy_attachment
-	// "policy", aws_iam_role_policy_attachment "policy", and
-	// aws_iam_user_policy_attachment "policy" all reduced to local.policy,
-	// so two of the three for_each'd over the third's data (each.value
-	// referencing attributes -- group/role -- that don't exist on it),
-	// deterministically failing `terraform validate`.
+	name   string
+	// Flat locals: same-named groups of different types collide.
 	localName string
-	diffKeys  []string // attributes that vary across members (sorted)
-	keyAttr   string   // the attribute whose value is the for_each map key ("" -> synthetic)
-	memIdx    []int    // indices into the caller's items slice
-	keys      []string // for_each map key per member (parallel to memIdx)
+	diffKeys  []string
+	keyAttr   string // "" means a synthetic key
+	memIdx    []int
+	keys      []string
 }
 
-// consolidateKeyAttrs is the priority order for choosing which varying
-// attribute supplies the for_each map key. First one that is a distinct,
-// non-empty string on every member wins.
+// Preferred for_each key attributes, first distinct wins.
 var consolidateKeyAttrs = []string{
 	"availability_zone", "cidr_block", "cidr_ipv4", "cidr_ip",
 	"name", "bucket", "domain_name", "identifier", "key", "path",
 }
 
-// consolidate groups items (already category-assigned and individually named)
-// into for_each groups. It never merges across category, tf type, or region,
-// and only merges runs of >= 3 whose configs match exactly outside a set of
-// simple varying attributes. catNamers is the live per-category name registry
-// -- a group claims its shared name through it so it can't collide with an
-// un-consolidated resource's name.
+// consolidate groups runs of 3+ identical-shape resources.
 func consolidate(items []placed, catNamers map[string]*namer) []*fgroup {
 	type bucketKey struct{ cat, tfType string }
 	buckets := map[bucketKey][]int{}
@@ -95,10 +70,6 @@ func consolidate(items []placed, catNamers map[string]*namer) []*fgroup {
 	return groups
 }
 
-// partitionConsolidatable splits idxs (all one cat+type) into runs that are
-// config-identical once the varying simple attributes are set aside. Members
-// on different regions, or differing in any non-simple (nested block, wired
-// reference) attribute, land in separate runs.
 func partitionConsolidatable(items []placed, idxs []int) [][]int {
 	present := map[string]int{}
 	for _, i := range idxs {
@@ -109,16 +80,13 @@ func partitionConsolidatable(items []placed, idxs []int) [][]int {
 	flex := map[string]bool{}
 	for k, cnt := range present {
 		if cnt != len(idxs) {
-			continue // present on only some members -> a real structural difference
+			continue // on only some members: structural difference
 		}
 		allSimple, differ := true, false
 		var first any
 		for n, i := range idxs {
 			v := items[i].r.Config[k]
-			// A differing bool almost always marks two genuinely different
-			// configurations (public vs private subnet, enabled vs not) rather
-			// than a parameterizable knob -- keep it in the signature so those
-			// split into separate groups.
+			// Differing bools mean different configs; don't merge.
 			if _, isBool := v.(bool); isBool || !simpleVal(v) {
 				allSimple = false
 				break
@@ -150,9 +118,6 @@ func partitionConsolidatable(items []placed, idxs []int) [][]int {
 	return out
 }
 
-// consolidateSignature is a stable string identifying a resource's config
-// with the varying attributes removed, plus its region -- two resources with
-// the same signature differ only in `flex` attributes.
 func consolidateSignature(r model.Resource, flex map[string]bool) string {
 	fixed := make(map[string]any, len(r.Config))
 	for k, v := range r.Config {
@@ -180,7 +145,7 @@ func buildGroup(items []placed, sub []int, catNamers map[string]*namer) *fgroup 
 		}
 	}
 	if len(diff) == 0 {
-		return nil // identical duplicates -- suspicious, leave them alone
+		return nil // identical duplicates are suspicious; leave them
 	}
 	diffKeys := make([]string, 0, len(diff))
 	for k := range diff {
@@ -200,9 +165,7 @@ func buildGroup(items []placed, sub []int, catNamers map[string]*namer) *fgroup 
 		nm = newNamer()
 		catNamers[cat] = nm
 	}
-	// the members already claimed their individual names in pass 1; release
-	// them so the group can take the name they were derived from (e.g. the
-	// three "virtualbeck*" MFA devices -> "virtualbeck", not "virtualbeck_2").
+	// free member names for the group base
 	for _, i := range sub {
 		delete(nm.used, rep.TFType+"."+items[i].name)
 	}
@@ -217,9 +180,7 @@ func buildGroup(items []placed, sub []int, catNamers map[string]*namer) *fgroup 
 	}
 }
 
-// chooseForEachKeys returns the attribute used for the for_each map key and
-// the per-member key values. It tries consolidateKeyAttrs in order, then the
-// Name tag, then a stable hash of the resource id as a last resort.
+// Key by attribute, Name tag, then ID hash.
 func chooseForEachKeys(items []placed, sub []int, diff map[string]bool) (string, []string) {
 	distinct := func(get func(int) string) []string {
 		seen := map[string]bool{}
@@ -259,10 +220,7 @@ func memberNames(items []placed, sub []int) []string {
 	return out
 }
 
-// groupBaseName picks the shared logical name for a for_each group: a
-// purpose name for the types heuristicName knows, otherwise the common
-// prefix of the members' individual names (private_1a / private_1b ->
-// private), otherwise the type.
+// Group name: heuristic, shared prefix, then type.
 func groupBaseName(r model.Resource, names []string) string {
 	switch r.TFType {
 	case "aws_subnet":
@@ -305,15 +263,12 @@ func commonNamePrefix(names []string) string {
 	p = strings.TrimRight(p, "_0123456789")
 	p = strings.TrimRight(p, "_")
 	if len(p) < 2 || !strings.ContainsFunc(p, func(r rune) bool { return r >= 'a' && r <= 'z' }) {
-		// no lowercase letter -> the "prefix" is a shared chunk of opaque ids
-		// (AKIA..., i-0abc...), not a real name.
+		// no lowercase: shared opaque-ID chunk, not a name
 		return ""
 	}
 	return p
 }
 
-// claimBase registers a specific base name (already sanitized), resolving a
-// collision with a numeric suffix -- the for_each-group counterpart to claim.
 func (n *namer) claimBase(tfType, base string) string {
 	base = sanitizeName(base)
 	name := base
@@ -324,9 +279,7 @@ func (n *namer) claimBase(tfType, base string) string {
 	return name
 }
 
-// simpleVal reports whether a config value is a scalar, a flat list of
-// scalars, or a flat map of scalars -- i.e. safe to lift verbatim into a
-// for_each locals entry.
+// simpleVal: scalar, or flat list/map of scalars.
 func simpleVal(v any) bool {
 	switch x := v.(type) {
 	case nil, string, float64, bool:
@@ -361,11 +314,7 @@ func simpleScalar(v any) bool {
 	return false
 }
 
-// forEachConfig returns the representative member's config with every varying
-// attribute replaced by an `each.key` / `each.value.<attr>` reference, plus
-// the cty value for this group's `local` map. common tags are stripped from
-// each member's tags before they land in the locals, matching what
-// stripCommonTags does to an ordinary resource body.
+// Varying attributes become each.key / each.value references.
 func forEachConfig(g *fgroup, items []placed, common map[string]string) (map[string]any, cty.Value) {
 	rep := items[g.memIdx[0]].r
 	out := make(map[string]any, len(rep.Config))
@@ -425,9 +374,6 @@ func strippedTags(v any, common map[string]string) any {
 	return src
 }
 
-// anyToCty converts a simpleVal into its cty form for a locals entry. A value
-// that can't be represented becomes null (buildGroup only ever passes values
-// simpleVal already accepted).
 func anyToCty(v any) cty.Value {
 	switch x := v.(type) {
 	case nil:
@@ -479,9 +425,6 @@ func anyToCty(v any) cty.Value {
 	}
 }
 
-// moduleLocalsFile renders the module's `locals` block: one entry per
-// for_each group, an object keyed by instance key whose values carry that
-// instance's varying attributes.
 func moduleLocalsFile(m *modBuild) *hclwrite.File {
 	f := hclwrite.NewEmptyFile()
 	lb := f.Body().AppendNewBlock("locals", nil).Body()
@@ -496,8 +439,6 @@ func moduleLocalsFile(m *modBuild) *hclwrite.File {
 	return f
 }
 
-// keyedTraversal builds aws_x.name["key"].attr, or aws_x.name.attr when the
-// target isn't a for_each member.
 func keyedTraversal(t refTarget) hcl.Traversal {
 	tr := hcl.Traversal{
 		hcl.TraverseRoot{Name: t.tfType},

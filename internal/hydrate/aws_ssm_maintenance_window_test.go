@@ -23,14 +23,14 @@ func TestSSMParameterList(t *testing.T) {
 }
 
 func TestSSMSingleBlock(t *testing.T) {
-	// list-wrapped (Generic()'s actual convention for a max-1 nested block)
+	// list-wrapped, Generic()'s convention
 	m := map[string]any{"x": []any{map[string]any{"a": 1}}}
 	sub := ssmSingleBlock(m, "x")
 	if sub["a"] != 1 {
 		t.Errorf("expected existing list-wrapped block to be found, got %#v", sub)
 	}
 
-	// bare map, in case some other path represents it that way
+	// bare map form
 	m2 := map[string]any{"x": map[string]any{"a": 2}}
 	sub2 := ssmSingleBlock(m2, "x")
 	if sub2["a"] != 2 {
@@ -50,13 +50,7 @@ func TestSSMSingleBlock(t *testing.T) {
 	}
 }
 
-// The union's own field names (Automation/Lambda/RunCommand/StepFunctions)
-// snake-case to e.g. "run_command", not the schema's "run_command_parameters"
-// -- without the override in place, filterBlock drops the whole sub-block
-// (comment, timeout_seconds, everything) as an unrecognized key, and
-// task_invocation_parameters.parameter (map[string][]string in the SDK,
-// a repeated {name,values} block in the schema) needs ssmTaskAttachParameters
-// regardless, since Generic() can't bridge that shape on its own.
+// Union renames plus parameter blocks, end to end.
 func TestSSMTaskInvocationParametersEndToEnd(t *testing.T) {
 	sch, err := schemaFor("aws_ssm_maintenance_window_task")
 	if err != nil {
@@ -111,9 +105,7 @@ func TestSSMTaskInvocationParametersEndToEnd(t *testing.T) {
 		t.Errorf("parameter entry wrong: %#v", p)
 	}
 
-	// a task whose ONLY meaningful run-command content is its parameters
-	// (comment/timeout_seconds both empty) must still get the block --
-	// Generic() alone would drop an all-empty nested block entirely.
+	// parameters alone must still produce the block
 	full.TaskInvocationParameters.RunCommand.Comment = nil
 	full.TaskInvocationParameters.RunCommand.TimeoutSeconds = nil
 	cfg2, err := Generic(full, sch, overrides)

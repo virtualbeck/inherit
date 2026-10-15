@@ -12,9 +12,7 @@ func init() {
 	registerFanout("aws_msk_cluster", fanoutMSKScramSecrets)
 }
 
-// fanoutMSKScramSecrets expands a cluster into its SASL/SCRAM secret
-// association -- one resource per cluster (not per secret), listing every
-// associated secret ARN as a set. Emits nothing when the cluster has none.
+// One association per cluster, listing every secret.
 func fanoutMSKScramSecrets(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	var arns []string
 	var token *string

@@ -8,8 +8,6 @@ import (
 	"github.com/virtualbeck/inherit/model"
 )
 
-// fanoutLambdaPermissions turns the resource policy of a function into one
-// aws_lambda_permission per statement. Called from fanoutLambda.
 func fanoutLambdaPermissions(ctx context.Context, cl *lambda.Client, parent model.Resource) []model.Resource {
 	fn := parent.ID
 	out, err := cl.GetPolicy(ctx, &lambda.GetPolicyInput{FunctionName: &fn})
@@ -51,8 +49,7 @@ func fanoutLambdaPermissions(ctx context.Context, cl *lambda.Client, parent mode
 			if v, ok := ops["AWS:SourceAccount"]; ok {
 				cfg["source_account"] = firstString(v)
 			}
-			// unlike SourceArn/SourceAccount, Lambda generates this one with
-			// the AWS-standard lowercase "aws:" global-condition-key prefix.
+			// this key keeps the lowercase aws: prefix
 			if v, ok := ops["aws:PrincipalOrgID"]; ok {
 				cfg["principal_org_id"] = firstString(v)
 			}

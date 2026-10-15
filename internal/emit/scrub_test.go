@@ -15,7 +15,7 @@ func TestScrubExternalIDs(t *testing.T) {
 	}{
 		{"vpc-0abc1234", true},
 		{"sg-0d3ebe25da01402e", true}, // 17-hex long form
-		{"ami-08b1c2d3", true},        // non-_id attr name in practice
+		{"ami-08b1c2d3", true},
 		{"i-0123456789abcdef0", true},
 		{"arn:aws:iam::aws:policy/ReadOnly", true},
 		{"10.0.0.0/16", false},     // CIDR, not an id
@@ -30,8 +30,7 @@ func TestScrubExternalIDs(t *testing.T) {
 	}
 }
 
-// A raw AWS id in a nested block, under a non-_id attribute name, and inside
-// a list must all be hoisted out of the module body into variables/main.tf.
+// Bare IDs are hoisted from anywhere.
 func TestScrubReachesEverywhere(t *testing.T) {
 	inv := model.Inventory{
 		Account: "123456789012", Regions: []string{"us-east-1"},
@@ -62,15 +61,13 @@ func TestScrubReachesEverywhere(t *testing.T) {
 	if !strings.Contains(main, "var.ami") {
 		t.Errorf("ami not hoisted to a variable:\n%s", main)
 	}
-	// the literals resurface only in the root main.tf (as module arguments)
-	// and variables.tf defaults are absent (these are required inputs).
+	// literals appear only as root module arguments
 	root := read(t, dir, "main.tf")
 	for _, raw := range []string{"ami-0fedcba9", "sg-01234567"} {
 		if !strings.Contains(root, raw) {
 			t.Errorf("root main.tf should supply %q as a module argument:\n%s", raw, root)
 		}
 	}
-	// everything still parses
 	if _, diag := hclparse.NewParser().ParseHCL([]byte(main), "main.tf"); diag.HasErrors() {
 		t.Errorf("generated main.tf does not parse: %s", diag)
 	}

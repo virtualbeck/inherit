@@ -15,18 +15,7 @@ func init() {
 	register("aws_glue_workflow", hydrateGlueWorkflow)
 }
 
-// hydrateGlueTrigger uses Generic() for the bulk of the shape (Action/
-// Predicate/EventBatchingCondition/NotificationProperty all map cleanly to
-// their schema names) but "enabled" has no direct API field at all -- the
-// real provider's Read derives it from trigger state, and for ON_DEMAND/
-// EVENT triggers ANDs that with the trigger's *prior* Terraform state
-// (`d.Get(names.AttrEnabled)`), which is always the zero value (false) right
-// after import. That makes "enabled" a one-time provider-directive-style
-// diff for ON_DEMAND/EVENT triggers specifically (same known-unfixable
-// category as lambda's `publish`) -- SCHEDULED/CONDITIONAL triggers don't
-// have that quirk since their enabled state comes straight from
-// State==ACTIVATED/ACTIVATING, so this best-effort computation is exactly
-// right for them and only wrong (for one plan) for the other two types.
+// enabled is derived; ON_DEMAND/EVENT diff once.
 func hydrateGlueTrigger(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	name := r.ID
 	out, err := glue.NewFromConfig(c.Cfg(r.Region)).GetTrigger(ctx, &glue.GetTriggerInput{Name: &name})
@@ -51,13 +40,7 @@ func hydrateGlueTrigger(ctx context.Context, c *Clients, r model.Resource) (map[
 	return cfg, nil
 }
 
-// hydrateGlueConnection forces HidePassword so AWS itself masks any
-// PASSWORD-family value inside connection_properties with asterisks before
-// it ever reaches inherit -- GetConnection returns the real plaintext
-// password by default (HidePassword defaults to false), and this is
-// otherwise exactly the kind of real secret this project has deliberately
-// never emitted elsewhere (same discipline as MWAA's
-// airflow_configuration_options).
+// HidePassword makes AWS mask connection passwords.
 func hydrateGlueConnection(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	name := r.ID
 	out, err := glue.NewFromConfig(c.Cfg(r.Region)).GetConnection(ctx, &glue.GetConnectionInput{Name: &name, HidePassword: true})

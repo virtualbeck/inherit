@@ -13,8 +13,6 @@ func init() {
 	registerFanout("aws_glue_catalog_database", fanoutGlueTables)
 }
 
-// glueColumns renders a []Column as columns[]/partition_keys[] entries --
-// both share the exact same {name, type, comment, parameters} shape.
 func glueColumns(cols []gluetypes.Column) []any {
 	var out []any
 	for _, col := range cols {
@@ -37,7 +35,6 @@ func glueColumns(cols []gluetypes.Column) []any {
 	return out
 }
 
-// fanoutGlueTables expands a Data Catalog database into its tables.
 func fanoutGlueTables(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	cl := glue.NewFromConfig(c.Cfg(parent.Region))
 	db := parent.ID

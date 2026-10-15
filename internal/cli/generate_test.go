@@ -10,9 +10,7 @@ import (
 	"github.com/virtualbeck/inherit/internal/tf"
 )
 
-// TestGenerateFixture runs the offline half end to end: a representative
-// inventory.json in, a complete project out. With INHERIT_INTEGRATION=1 it
-// also runs tofu init + validate on the result (no AWS credentials needed).
+// Fixture in, project out; tofu validate when integrating.
 func TestGenerateFixture(t *testing.T) {
 	dir := t.TempDir()
 	b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "fixtures", "typical-account.json"))

@@ -29,7 +29,7 @@ func TestIsReadOnly(t *testing.T) {
 		{"GenerateCredentialReport", false},
 		{"GetFederationToken", false},
 
-		// bare verb with no capitalised noun after - not matched
+		// bare verb, no noun: not matched
 		{"Get", false},
 		{"List", false},
 	}

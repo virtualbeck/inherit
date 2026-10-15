@@ -22,18 +22,12 @@ import (
 )
 
 const (
-	// Classic `import` holds the local state lock for its whole run, Read
-	// included, so parallel imports mostly queue on the lock: a few overlap
-	// process startup, more only add lock contention and provider memory.
+	// Imports queue on the state lock anyway.
 	importConcurrency = 4
 
-	// fastImportChunk is the largest import --fast batch. Each batch costs
-	// three tofu runs over the whole project, so bigger is faster; 200
-	// targets also keeps the -target list well under Windows' 32K-character
-	// command line.
+	// Fewer tofu runs; still fits Windows' argv limit.
 	fastImportChunk = 200
-	// fastImportMinBatch: a failing batch is halved until it's this small,
-	// then its resources go to classic import.
+	// Failing batches halve to this, then go classic.
 	fastImportMinBatch = 8
 )
 
@@ -81,8 +75,7 @@ func importCmd() *cobra.Command {
 	return cmd
 }
 
-// adopt runs init + validate, the optional import mode ("", "import", or
-// "fast-import"), then plan.
+// adopt runs init, validate, optional import, then plan.
 func adopt(ctx context.Context, dir, tfBin, mode string) error {
 	absDir, _ := filepath.Abs(dir)
 
@@ -109,8 +102,7 @@ func adopt(ctx context.Context, dir, tfBin, mode string) error {
 		return fmt.Errorf("%s validate: %w", name, err)
 	}
 
-	// Failed imports don't stop the plan (it shows exactly what's still
-	// missing), but they do make the command fail once it has run.
+	// Plan still runs; import failures fail the command.
 	var importErr error
 	switch mode {
 	case "fast-import":
@@ -133,8 +125,7 @@ func adopt(ctx context.Context, dir, tfBin, mode string) error {
 	return nil
 }
 
-// pendingImports drops the specs whose address is already in state, so a
-// re-run picks up where the last one stopped.
+// pendingImports skips addresses already in state.
 func pendingImports(ctx context.Context, r *tf.Runner, specs []emit.ImportSpec) (pending []emit.ImportSpec, skipped int) {
 	have, _ := r.StateList(ctx)
 	for _, s := range specs {
@@ -147,10 +138,7 @@ func pendingImports(ctx context.Context, r *tf.Runner, specs []emit.ImportSpec) 
 	return pending, skipped
 }
 
-// readImports pulls the import{} blocks emit wrote into imports.tf back out
-// as ImportSpecs, so import can run without a fresh generate. It parses the
-// file as HCL, so escaped IDs and for_each keys come back exactly as written;
-// a block it can't interpret is an error, never silently skipped.
+// readImports parses imports.tf as HCL; bad blocks error.
 func readImports(dir string) ([]emit.ImportSpec, error) {
 	path := filepath.Join(dir, "imports.tf")
 	b, err := os.ReadFile(path)
@@ -175,12 +163,7 @@ func readImports(dir string) ([]emit.ImportSpec, error) {
 	return specs, nil
 }
 
-// importSpec interprets one block shaped as emit writes it:
-//
-//	import {
-//	  to = module.<cat>.<type>.<name>["<key>"]   # key only for for_each
-//	  id = "<id>"
-//	}
+// importSpec reads to = module.<cat>.<type>.<name>[key].
 func importSpec(blk *hclsyntax.Block) (emit.ImportSpec, error) {
 	to, ok := blk.Body.Attributes["to"]
 	if !ok {
@@ -224,8 +207,7 @@ func importSpec(blk *hclsyntax.Block) (emit.ImportSpec, error) {
 	}, nil
 }
 
-// retryable matches known-transient failure signatures in `tofu import`
-// output: AWS/provider rate-limiting, and local state-lock contention.
+// Transient tofu import failures: throttling, lock contention.
 var retryable = regexp.MustCompile(`(?i)throttl|rate exceeded|too many requests|slow ?down|request ?limit ?exceeded|error acquiring the state lock|resource temporarily unavailable`)
 
 func importOne(ctx context.Context, r *tf.Runner, addr, id string) (string, error) {
@@ -250,8 +232,7 @@ func importOne(ctx context.Context, r *tf.Runner, addr, id string) (string, erro
 	return out, err
 }
 
-// runImports imports each spec with classic `import`, and reports an error
-// if any of them failed or the run was interrupted.
+// runImports runs classic import; errors if any failed.
 func runImports(ctx context.Context, r *tf.Runner, specs []emit.ImportSpec, concurrency int) error {
 	concurrency = max(concurrency, 1)
 	pending, skipped := pendingImports(ctx, r, specs)
@@ -265,7 +246,7 @@ func runImports(ctx context.Context, r *tf.Runner, specs []emit.ImportSpec, conc
 	)
 	par.Each(pending, concurrency, func(s emit.ImportSpec) {
 		if ctx.Err() != nil {
-			return // interrupted: start nothing new
+			return // interrupted
 		}
 		out, err := importOne(ctx, r, s.Addr, s.ID)
 		mu.Lock()

@@ -1,5 +1,4 @@
-// Package discover builds the account resource inventory with the Resource
-// Groups Tagging API, swept across regions concurrently. Read-only.
+// Package discover sweeps the Tagging API across regions.
 package discover
 
 import (
@@ -16,34 +15,20 @@ import (
 	"github.com/virtualbeck/inherit/model"
 )
 
-// Options controls a sweep.
 type Options struct {
 	Account          string
 	Partition        string
 	Regions          []string
-	Concurrency      int  // max regions swept at once
-	IncludeEphemeral bool // keep snapshots / images / sessions / recovery points
-	// Exclude entries are either a bare service namespace ("cloudformation",
-	// dropping every resource of that service) or "service:type" (e.g.
-	// "cloudformation:stackset", dropping just that one ARN resource-type
-	// within the service -- the type string is the ARN's own resource-type
-	// segment, case-insensitive; see a scan's own inventory.json / discovered-
-	// types summary if unsure what a given type is called).
+	Concurrency      int
+	IncludeEphemeral bool
+	// Exclude entries: "service" or "service:arn-type".
 	Exclude []string
-	// Services, when non-empty, is an allowlist: only resources whose ARN
-	// service segment is in this list are kept, before Exclude is applied.
-	// Coarser than Exclude in the opposite direction -- for scanning one or
-	// two services out of a large, messy account instead of excluding
-	// everything else by name.
+	// Services, if set, is an allowlist applied first.
 	Services []string
 	OnRegion func(region string, found int, err error)
 }
 
-// ephemeral is the set of (service, ARN resource-type) pairs inherit drops from
-// the inventory by default: backups / snapshots / point-in-time artifacts /
-// transient sessions that never belong in IaC, plus a few types that inherit
-// already emits from a parent's fanout (so the standalone ARN is a duplicate).
-// Kept when IncludeEphemeral is set.
+// Backups, snapshots, sessions, and types emitted via fanout.
 var ephemeral = map[[2]string]bool{
 	{"ec2", "snapshot"}:                            true, // EBS snapshots
 	{"ec2", "image"}:                               true, // AMIs
@@ -68,13 +53,9 @@ var ephemeral = map[[2]string]bool{
 	{"cloudformation", "changeSet"}:                true,
 }
 
-// IsEphemeral reports whether a discovered resource is a backup / snapshot /
-// session artifact that inherit skips by default.
 func IsEphemeral(r model.Resource) bool { return ephemeral[[2]string{r.Service, r.Type}] }
 
-// filterResources applies --services (if given), --exclude, and (unless
-// includeEphemeral) the ephemeral denylist to one region's raw results,
-// reporting how many were dropped by --services/--exclude combined.
+// filterResources applies allowlist, excludes and the ephemeral filter.
 func filterResources(res []model.Resource, allow map[string]bool, excludedServices map[string]bool, excludedTypes map[[2]string]bool, includeEphemeral bool) ([]model.Resource, int) {
 	var kept []model.Resource
 	var excludedHits int
@@ -96,8 +77,6 @@ func filterResources(res []model.Resource, allow map[string]bool, excludedServic
 	return kept, excludedHits
 }
 
-// excludeSet splits --exclude entries into whole-service and service:type
-// denylists, lower-cased for case-insensitive matching.
 func excludeSet(entries []string) (services map[string]bool, types map[[2]string]bool) {
 	for _, e := range entries {
 		e = strings.ToLower(strings.TrimSpace(e))
@@ -119,7 +98,6 @@ func excludeSet(entries []string) (services map[string]bool, types map[[2]string
 	return services, types
 }
 
-// servicesAllowSet lower-cases and set-ifies a --services allowlist.
 func servicesAllowSet(services []string) map[string]bool {
 	if len(services) == 0 {
 		return nil
@@ -131,12 +109,7 @@ func servicesAllowSet(services []string) map[string]bool {
 	return set
 }
 
-// Sweep enumerates every taggable resource across the given regions. Resources
-// with no region in their ARN (global services such as IAM) are de-duplicated
-// so they appear once.
-//
-// Returns the inventory, the count skipped as ephemeral, and the count
-// skipped because their service is in Exclude.
+// Sweep lists tagged resources; returns skip counts too.
 func Sweep(ctx context.Context, cfg aws.Config, opt Options) (model.Inventory, int, int, error) {
 	if opt.Concurrency <= 0 {
 		opt.Concurrency = 8
@@ -166,7 +139,7 @@ func Sweep(ctx context.Context, cfg aws.Config, opt Options) (model.Inventory, i
 		excludedHits += excludedInRegion
 		skipped += len(res) - excludedInRegion - len(kept)
 		for _, r := range kept {
-			if _, ok := byARN[r.ARN]; !ok { // a global resource seen from a second region keeps the first
+			if _, ok := byARN[r.ARN]; !ok { // global resource seen from another region
 				byARN[r.ARN] = r
 			}
 		}
@@ -218,8 +191,7 @@ func toResource(m rgttypes.ResourceTagMapping) (model.Resource, bool) {
 	if !ok {
 		return model.Resource{}, false
 	}
-	// apigateway ARNs are arn:aws:apigateway:region::/restapis/<id>; the leading
-	// slash would otherwise swallow the resource type.
+	// apigateway ARNs have a leading slash: ::/restapis/<id>
 	resource = strings.TrimPrefix(resource, "/")
 	rtype, id := model.SplitResource(resource)
 	r := model.Resource{
@@ -233,8 +205,7 @@ func toResource(m rgttypes.ResourceTagMapping) (model.Resource, bool) {
 	_ = partition
 	for _, t := range m.Tags {
 		k := aws.ToString(t.Key)
-		// aws:* tags are system-managed (CloudFormation, ControlTower, ...); the
-		// provider never puts them in state, so emitting them is pure drift.
+		// Provider never stores aws:* tags; emitting them drifts.
 		if strings.HasPrefix(k, "aws:") {
 			continue
 		}

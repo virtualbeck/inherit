@@ -14,9 +14,6 @@ func init() {
 	registerFanout("aws_transfer_user", fanoutTransferSSHKeys)
 }
 
-// transferUserIDs splits r.ID ("server-id/username", the ARN resource
-// "user/server-id/username" minus its leading "user/" segment) into the two
-// separate values DescribeUser needs.
 func transferUserIDs(id string) (serverID, userName string, ok bool) {
 	serverID, userName, ok = strings.Cut(id, "/")
 	return serverID, userName, ok && serverID != "" && userName != ""
@@ -34,10 +31,7 @@ func fetchTransferUser(ctx context.Context, c *Clients, r model.Resource) (any, 
 	return out.User, nil
 }
 
-// fanoutTransferSSHKeys expands a user into its SSH public keys, a separate
-// top-level resource in the provider -- DescribeUser's own response (already
-// fetched by the parent hydrator, but fanouts don't see that result, so this
-// re-fetches) already carries them, no separate API needed.
+// DescribeUser already carries the keys.
 func fanoutTransferSSHKeys(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	serverID, userName, ok := transferUserIDs(parent.ID)
 	if !ok {

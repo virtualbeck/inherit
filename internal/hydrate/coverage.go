@@ -2,21 +2,15 @@ package hydrate
 
 import "sort"
 
-// extraCoveredTypes are Terraform resource types inherit emits without a direct
-// registry hydrator: fanout children (produced from a parent) and gap-filled
-// types (discovered outside the tagging API). Keep this list in sync with the
-// fanouts in aws_*_fanout.go / aws_fanout*.go and the gap-fillers.
+// Types emitted without a direct hydrator: fanouts, gap-fills.
 var extraCoveredTypes = []string{
 	// security-group rule fanout
 	"aws_vpc_security_group_ingress_rule", "aws_vpc_security_group_egress_rule",
-	// retypeSentinel targets -- never independently register()'d, only
-	// ever produced by retyping from their non-default counterpart
+	// retype targets of their non-default counterparts
 	"aws_default_network_acl", "aws_default_vpc",
-	// service-discovery namespace retype targets (registered under
-	// aws_service_discovery_http_namespace, redirected via retypeSentinel)
+	// retype targets of aws_service_discovery_http_namespace
 	"aws_service_discovery_private_dns_namespace", "aws_service_discovery_public_dns_namespace",
-	// datasync location retype targets (registered under
-	// aws_datasync_location_s3, redirected via retypeSentinel)
+	// retype targets of aws_datasync_location_s3
 	"aws_datasync_location_nfs", "aws_datasync_location_efs",
 	// appconfig application fanout
 	"aws_appconfig_environment", "aws_appconfig_configuration_profile",
@@ -37,16 +31,14 @@ var extraCoveredTypes = []string{
 	// iam gap-fillers
 	"aws_iam_account_password_policy", "aws_iam_account_alias",
 	"aws_iam_access_key", "aws_iam_signing_certificate", "aws_iam_virtual_mfa_device",
-	// route53 resolver firewall rule group / query log config fanouts
+	// resolver firewall and query log fanouts
 	"aws_route53_resolver_firewall_rule", "aws_route53_resolver_firewall_rule_group_association",
 	"aws_route53_resolver_query_log_config_association",
-	// transit gateway peering attachment retype target (registered under
-	// aws_ec2_transit_gateway_vpc_attachment, redirected via retypeSentinel)
+	// retype target of the TGW VPC attachment
 	"aws_ec2_transit_gateway_peering_attachment",
 	// transfer user fanout
 	"aws_transfer_ssh_key",
-	// DX virtual interface retype target (registered under
-	// aws_dx_private_virtual_interface, redirected via retypeSentinel)
+	// retype target of the private VIF
 	"aws_dx_public_virtual_interface",
 	"aws_ecr_registry_policy", "aws_ecr_replication_configuration", "aws_ecr_pull_through_cache_rule",
 	"aws_backup_region_settings",
@@ -84,8 +76,7 @@ var extraCoveredTypes = []string{
 	"aws_cloudfront_response_headers_policy", "aws_cloudfront_public_key", "aws_cloudfront_key_group",
 	// api gateway v1 fanouts + account gap-filler
 	"aws_api_gateway_usage_plan_key", "aws_api_gateway_base_path_mapping", "aws_api_gateway_account",
-	// neptune cluster parameter group retype target (registered under
-	// aws_rds_cluster_parameter_group, redirected via retypeSentinel)
+	// retype target of aws_rds_cluster_parameter_group
 	"aws_neptune_cluster_parameter_group",
 	// neptune cluster fanout + event subscription gap-filler
 	"aws_neptune_cluster_instance", "aws_neptune_cluster_endpoint", "aws_neptune_event_subscription",
@@ -134,11 +125,7 @@ var extraCoveredTypes = []string{
 	"aws_route_table_association",
 	"aws_autoscaling_policy", "aws_autoscaling_schedule", "aws_autoscaling_lifecycle_hook",
 	"aws_lb_target_group_attachment",
-	// aws_iam_group_membership deliberately not (re-)added: dropped in favor
-	// of aws_iam_user_group_membership alone (see aws_iam_attach.go) -- the
-	// two are competing, mutually-exclusive-in-practice ways to model the
-	// same real memberships, and the provider's own docs warn against
-	// emitting both.
+	// not aws_iam_group_membership: emitting both conflicts
 	"aws_iam_user_group_membership",
 	"aws_cognito_user_pool_domain",
 	"aws_efs_access_point", "aws_secretsmanager_secret_rotation",
@@ -168,15 +155,12 @@ var extraCoveredTypes = []string{
 	"aws_s3_bucket_acl",
 }
 
-// wafv2SwitchTypes are the wafv2 types resolved by the special-case in
-// ResolveTFType (they have no arnToTF entry).
+// Resolved specially in ResolveTFType; no arnToTF entry.
 var wafv2SwitchTypes = []string{
 	"aws_wafv2_web_acl", "aws_wafv2_ip_set", "aws_wafv2_regex_pattern_set", "aws_wafv2_rule_group",
 }
 
-// CoveredTypes returns every Terraform resource type inherit can emit: direct
-// hydrators, arnToTF targets, fanout children, gap-filled types and the wafv2
-// special-cases. Sorted, deduplicated.
+// CoveredTypes lists every emittable type, sorted.
 func CoveredTypes() []string {
 	set := map[string]bool{}
 	for tf := range registry {

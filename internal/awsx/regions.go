@@ -10,9 +10,7 @@ import (
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 )
 
-// EnabledRegions returns the regions enabled for the account, sorted. It uses
-// ec2:DescribeRegions (available to essentially every principal); regions that
-// are disabled for the account are excluded.
+// EnabledRegions returns the account's enabled regions, sorted.
 func EnabledRegions(ctx context.Context, cfg aws.Config) ([]string, error) {
 	c := ec2.NewFromConfig(cfg)
 	out, err := c.DescribeRegions(ctx, &ec2.DescribeRegionsInput{

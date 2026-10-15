@@ -23,10 +23,7 @@ func init() {
 	register("aws_dlm_lifecycle_policy", hydrateDLMPolicy)
 }
 
-// In provider v5+/v6 almost everything about a bucket (versioning, encryption,
-// lifecycle, policy, ...) is a separate aws_s3_bucket_* resource. The bucket
-// itself is just its name plus tags; the satellites get their own hydrators
-// later.
+// Bucket is name and tags; satellites are separate.
 func hydrateS3Bucket(_ context.Context, _ *Clients, r model.Resource) (map[string]any, error) {
 	return map[string]any{"bucket": r.ID}, nil
 }
@@ -35,10 +32,7 @@ func resolveS3BucketRegion(ctx context.Context, c *Clients, r model.Resource) (s
 	return bucketRegion(ctx, c, r.ID), nil
 }
 
-// bucketRegion resolves a bucket's real region: its ARN carries none
-// (`arn:aws:s3:::bucket`), so the bucket itself and every aws_s3_bucket_*
-// satellite need this to know which region's client -- and, in the generated
-// HCL, which aliased provider -- to use.
+// S3 ARNs carry no region; ask the bucket.
 func bucketRegion(ctx context.Context, c *Clients, bucket string) string {
 	base := s3.NewFromConfig(c.Cfg("us-east-1"))
 	region := "us-east-1"
@@ -63,11 +57,7 @@ func hydrateEFSFileSystem(ctx context.Context, c *Clients, r model.Resource) (ma
 	if len(out.FileSystems) == 0 {
 		return nil, fmt.Errorf("not found")
 	}
-	// FileSystemProtection/ReplicationOverwriteProtection snake-case to
-	// "file_system_protection"/"replication_overwrite_protection", but the
-	// schema's nested block and its one attribute are named "protection"/
-	// "replication_overwrite" -- Generic() would otherwise drop the whole
-	// thing as unrecognized.
+	// schema names: protection, replication_overwrite
 	cfg, err := Generic(out.FileSystems[0], sch, map[string]string{
 		"file_system_protection":           "protection",
 		"replication_overwrite_protection": "replication_overwrite",
@@ -75,7 +65,6 @@ func hydrateEFSFileSystem(ctx context.Context, c *Clients, r model.Resource) (ma
 	if err != nil {
 		return nil, err
 	}
-	// lifecycle_policy is a separate call the provider reads on every plan.
 	if lc, lerr := cl.DescribeLifecycleConfiguration(ctx, &efs.DescribeLifecycleConfigurationInput{FileSystemId: &r.ID}); lerr == nil {
 		var pols []any
 		for _, p := range lc.LifecyclePolicies {
@@ -132,10 +121,6 @@ func hydrateBackupPlan(ctx context.Context, c *Clients, r model.Resource) (map[s
 		if v := aws.ToString(ru.ScheduleExpression); v != "" {
 			rule["schedule"] = v
 		}
-		// completion_window/start_window/enable_continuous_backup/
-		// recovery_point_tags/schedule_expression_timezone/copy_action:
-		// cold_storage_after (transition-to-cold) is one of the more
-		// commonly set knobs on a real backup plan.
 		if ru.CompletionWindowMinutes != nil {
 			rule["completion_window"] = *ru.CompletionWindowMinutes
 		}
@@ -210,23 +195,14 @@ func hydrateDLMPolicy(ctx context.Context, c *Clients, r model.Resource) (map[st
 	if err != nil {
 		return nil, err
 	}
-	// policy_details.target_tags is map(string) in the schema, but the SDK's
-	// PolicyDetails.TargetTags is []Tag{Key,Value} (the standard AWS tag
-	// list shape) -- Generic()'s IsMap() handling passes a map(string)
-	// attribute's value through completely untouched (it doesn't know how
-	// to convert a list-of-{Key,Value} into one), so it arrives as a raw
-	// list of {"Key":...,"Value":...} objects instead of a real map.
+	// target_tags arrives as []Tag; convert to map
 	if pd, ok := cfg["policy_details"].([]any); ok {
 		for _, item := range pd {
 			if m, ok := item.(map[string]any); ok {
 				if tags, ok := m["target_tags"].([]any); ok {
 					m["target_tags"] = dlmTagsToMap(tags)
 				}
-				// same Generic()/filterNested whole-block-drop failure mode
-				// already seen on cloudfront_vpc_origin: create_rule's
-				// Required sub-attrs don't all survive pruning, so the
-				// entire schedule list came back empty. Built explicitly
-				// from the SDK struct instead of trusting Generic() here.
+				// filterNested drops schedules; build them explicitly
 				if sch := dlmSchedules(out.Policy.PolicyDetails.Schedules); len(sch) > 0 {
 					m["schedule"] = sch
 				}
@@ -255,11 +231,7 @@ func dlmSchedules(schedules []dlmtypes.Schedule) []any {
 			if v := aws.ToString(cr.CronExpression); v != "" {
 				crm["cron_expression"] = v
 			}
-			// create_rule is exactly one of cron_expression or
-			// interval+interval_unit, but the SDK always returns Interval
-			// as a non-nil *0, not nil, on a cron-scheduled policy -- 0
-			// isn't in the schema's allowed enum ([1 2 3 4 6 8 12 24]), so
-			// only set it when it's actually meaningful.
+			// cron rules return *0, which is invalid
 			if cr.Interval != nil && *cr.Interval != 0 {
 				crm["interval"] = *cr.Interval
 			}
@@ -279,9 +251,7 @@ func dlmSchedules(schedules []dlmtypes.Schedule) []any {
 			if rr.Count != nil {
 				rrm["count"] = *rr.Count
 			}
-			// same story as create_rule above: Interval comes back non-nil
-			// *0 on a count-based retain rule, and 0 fails the schema's
-			// "at least 1" check.
+			// *0 again; schema wants at least 1
 			if rr.Interval != nil && *rr.Interval != 0 {
 				rrm["interval"] = *rr.Interval
 			}
@@ -295,9 +265,6 @@ func dlmSchedules(schedules []dlmtypes.Schedule) []any {
 	return out
 }
 
-// dlmTagsToAny adapts the SDK's []Tag straight to dlmTagsToMap's []any
-// input (which normally comes from Generic()'s JSON round-trip) without a
-// second, parallel map-building helper.
 func dlmTagsToAny(tags []dlmtypes.Tag) []any {
 	out := make([]any, 0, len(tags))
 	for _, t := range tags {
@@ -306,15 +273,7 @@ func dlmTagsToAny(tags []dlmtypes.Tag) []any {
 	return out
 }
 
-// fixDLMDefaultPolicy corrects default_policy in place. It's a string enum
-// ("VOLUME"/"INSTANCE") identifying one of AWS's own pre-built default
-// policies -- and conflicts outright with policy_details, which only
-// applies to a regular custom policy. DLM's SDK models it as a bare
-// DefaultPolicy *bool, which Generic() marshals straight through as a JSON
-// bool; that satisfies neither the enum-string type nor the mutual
-// exclusion. The overwhelming common case is false (a regular policy): just
-// omit the attribute entirely -- its presence at all is what triggers the
-// conflict, not its value.
+// SDK bool conflicts with policy_details; omit when false.
 func fixDLMDefaultPolicy(cfg map[string]any, resourceTypes []dlmtypes.ResourceTypeValues) {
 	isDefault, ok := cfg["default_policy"].(bool)
 	if !ok {

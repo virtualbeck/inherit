@@ -13,10 +13,6 @@ func init() {
 	registerGapFiller(gapFillConfigAggregateAuthorizations)
 }
 
-// gapFillConfigRetention discovers the region's Config configuration-item
-// retention period -- a true account/region singleton (at most one per
-// DescribeRetentionConfigurations' own doc comment), no ARN/tagging
-// concept.
 func gapFillConfigRetention(ctx context.Context, c *Clients, region string) ([]model.Resource, error) {
 	cl := configservice.NewFromConfig(c.Cfg(region))
 	out, err := cl.DescribeRetentionConfigurations(ctx, &configservice.DescribeRetentionConfigurationsInput{})
@@ -35,11 +31,6 @@ func gapFillConfigRetention(ctx context.Context, c *Clients, region string) ([]m
 	}}, nil
 }
 
-// gapFillConfigAggregateAuthorizations discovers cross-account/cross-region
-// authorizations this account has granted to OTHER accounts' Config
-// aggregators -- no ARN concept for the standalone tagging-API sweep to
-// find (AggregationAuthorizationArn exists but isn't populated in an
-// arnToTF-friendly way here), so gap-filled directly instead.
 func gapFillConfigAggregateAuthorizations(ctx context.Context, c *Clients, region string) ([]model.Resource, error) {
 	cl := configservice.NewFromConfig(c.Cfg(region))
 	var out []model.Resource

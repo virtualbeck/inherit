@@ -10,12 +10,7 @@ import (
 
 func init() { registerGapFiller(gapFillLogsDestinations) }
 
-// gapFillLogsDestinations discovers CloudWatch Logs subscription
-// destinations (cross-account log shipping targets, e.g. into a Kinesis
-// stream) and, for any that has one, its access policy as a separate
-// resource -- the schema models these as two distinct types even though
-// DescribeDestinations returns the policy right alongside the destination
-// itself.
+// Destinations and their policies, as separate resources.
 func gapFillLogsDestinations(ctx context.Context, c *Clients, region string) ([]model.Resource, error) {
 	cl := cwl.NewFromConfig(c.Cfg(region))
 	var out []model.Resource

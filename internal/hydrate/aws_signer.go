@@ -15,18 +15,14 @@ func init() {
 	))
 }
 
-// fetchSigningProfile's ProfileName doesn't snake-case to the schema's
-// "name" (an override, not a Generic() nested-block issue).
+// ProfileName maps to name.
 func fetchSigningProfile(ctx context.Context, c *Clients, r model.Resource) (any, error) {
 	name := r.ID
 	out, err := signer.NewFromConfig(c.Cfg(r.Region)).GetSigningProfile(ctx, &signer.GetSigningProfileInput{ProfileName: &name})
 	if err != nil {
 		return nil, err
 	}
-	// A Canceled/Revoked profile still answers GetSigningProfile (list/tagging
-	// discovery both still see it) but the provider's own Read treats it as
-	// gone, so import always 404s -- same "discovered but not really there"
-	// exclusion as INACTIVE ECS task definitions / PendingDeletion KMS keys.
+	// inactive profiles can't be imported
 	if out.Status != signertypes.SigningProfileStatusActive {
 		return nil, fmt.Errorf("signing profile %q is %s, not Active", name, out.Status)
 	}

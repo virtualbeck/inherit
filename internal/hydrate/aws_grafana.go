@@ -10,13 +10,7 @@ import (
 
 func init() { register("aws_grafana_workspace", hydrateGrafanaWorkspace) }
 
-// hydrateGrafanaWorkspace is hand-built rather than Generic(): Authentication
-// is a nested {Providers, SamlConfigurationStatus} struct in the SDK, but
-// the schema wants a flat authentication_providers list with no nested block
-// at all (Generic() would just drop it as unknown-to-schema); WorkspaceRoleArn
-// doesn't snake-case to the schema's role_arn; and "configuration" is a
-// second API call entirely (DescribeWorkspaceConfiguration), not part of
-// DescribeWorkspace's own response.
+// Hand-built: nested auth, renamed role, separate config call.
 func hydrateGrafanaWorkspace(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	cl := grafana.NewFromConfig(c.Cfg(r.Region))
 	id := r.ID

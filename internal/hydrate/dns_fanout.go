@@ -27,7 +27,7 @@ func fanoutRoute53Records(ctx context.Context, c *Clients, parent model.Resource
 	for _, rs := range out.ResourceRecordSets {
 		name := strings.TrimSuffix(aws.ToString(rs.Name), ".")
 		typ := string(rs.Type)
-		// the apex SOA/NS records are managed by the zone resource itself
+		// apex SOA/NS belong to the zone
 		if (typ == "SOA" || typ == "NS") && name == zoneName {
 			continue
 		}
@@ -36,12 +36,7 @@ func fanoutRoute53Records(ctx context.Context, c *Clients, parent model.Resource
 			"name":    name,
 			"type":    typ,
 		}
-		// SetIdentifier is what distinguishes sibling records of a routing
-		// policy group (weighted/latency/failover/geolocation/geoproximity/
-		// cidr all share the same name+type by definition) -- without it in
-		// both the emitted config AND this resource's own ID, every sibling
-		// in a group collided on exactly the same ID, so only one of them
-		// ever made it through.
+		// SetIdentifier keeps routing-policy siblings distinct
 		setID := aws.ToString(rs.SetIdentifier)
 		id := zoneID + "_" + name + "_" + typ
 		if setID != "" {
@@ -128,11 +123,7 @@ func fanoutRoute53Records(ctx context.Context, c *Clients, parent model.Resource
 	return kids, nil
 }
 
-// fanoutRoute53DNSSEC expands a zone into its DNSSEC signing status and any
-// key-signing keys -- GetDNSSEC returns both in one call, but the schema
-// models them as two separate resource types (and the zone's own signing
-// status isn't otherwise readable from ListResourceRecordSets/GetHostedZone
-// at all).
+// DNSSEC status and key-signing keys from one call.
 func fanoutRoute53DNSSEC(ctx context.Context, c *Clients, parent model.Resource, zoneID string) []model.Resource {
 	out, err := route53.NewFromConfig(c.Cfg("")).GetDNSSEC(ctx, &route53.GetDNSSECInput{HostedZoneId: &zoneID})
 	if err != nil || out.Status == nil {

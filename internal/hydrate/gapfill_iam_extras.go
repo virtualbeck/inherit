@@ -14,9 +14,6 @@ func init() {
 	registerGlobalGapFiller(gapFillIAMUserCredentials)
 }
 
-// gapFillIAMAccountSingletons discovers the account-wide password policy
-// and account alias -- both true account singletons (no ARN, no tagging
-// concept, at most one of each per account).
 func gapFillIAMAccountSingletons(ctx context.Context, c *Clients, _ string) ([]model.Resource, error) {
 	cl := iam.NewFromConfig(c.Cfg(""))
 	var out []model.Resource
@@ -59,15 +56,7 @@ func gapFillIAMAccountSingletons(ctx context.Context, c *Clients, _ string) ([]m
 	return out, nil
 }
 
-// gapFillIAMUserCredentials discovers per-user access keys and X.509
-// signing certificates, plus account-wide virtual MFA devices. secret/
-// encrypted_secret/base_32_string_seed/qr_code_png are all Computed-only,
-// create-time-only fields no Read/List call ever returns again -- left
-// unset here, same structural gap as ACM's private key or the KMS key
-// material itself, but harmless since none of them are Required.
-// aws_iam_server_certificate is deliberately NOT attempted: its
-// private_key is Required with zero Read equivalent at all (unlike the
-// Computed fields here), the same unfixable class as aws_lb_trust_store.
+// Secrets are create-only; server certificates are skipped.
 func gapFillIAMUserCredentials(ctx context.Context, c *Clients, _ string) ([]model.Resource, error) {
 	cl := iam.NewFromConfig(c.Cfg(""))
 	var out []model.Resource
@@ -133,9 +122,7 @@ func gapFillIAMUserCredentials(ctx context.Context, c *Clients, _ string) ([]mod
 			if serial == "" {
 				continue
 			}
-			// serial_number is an ARN, "arn:aws:iam::account:mfa/[path/]name" --
-			// the device's own name is the last "/"-separated segment
-			// (confirmed against the real provider's parseVirtualMFADeviceARN).
+			// the device name ends the serial ARN
 			name := serial
 			if i := strings.LastIndex(serial, "/"); i >= 0 {
 				name = serial[i+1:]
@@ -144,13 +131,7 @@ func gapFillIAMUserCredentials(ctx context.Context, c *Clients, _ string) ([]mod
 				continue
 			}
 			cfg := map[string]any{"virtual_mfa_device_name": name}
-			// like ListRoles/ListUsers, ListVirtualMFADevices never
-			// populates its own Tags field -- confirmed by a real fresh
-			// import dropping every tag on this resource, not assumed.
-			// Gap-filled resources skip the main hydrate loop's own
-			// cfgMap["tags"] = r.Tags step entirely, so both r.Tags and
-			// cfg["tags"] need setting here directly, same as the IAM
-			// role/user/policy gap-filler.
+			// List never returns tags; set them here
 			var tags map[string]string
 			if lt, terr := cl.ListMFADeviceTags(ctx, &iam.ListMFADeviceTagsInput{SerialNumber: &serial}); terr == nil {
 				tags = iamTagMap(lt.Tags)

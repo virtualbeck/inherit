@@ -70,14 +70,7 @@ func hydrateSQSQueue(ctx context.Context, c *Clients, r model.Resource) (map[str
 	return cfg, nil
 }
 
-// attrsToConfig turns an AWS "Attributes" string map (SNS/SQS style) into a
-// schema-filtered TF config map. "policy" is always skipped even though both
-// aws_sqs_queue and aws_sns_topic still carry an Optional+Computed `policy`
-// attribute for backward compatibility: this account's queue/topic policy is
-// already emitted as its own aws_sqs_queue_policy/aws_sns_topic_policy
-// resource (fanoutSQSPolicy / fanoutSNSPolicy), and declaring the same real
-// policy both inline and standalone is two resources fighting over the same
-// attachment on any future apply.
+// Skips policy; it's emitted as its own resource.
 func attrsToConfig(attrs map[string]string, sch *tfschema.Block) map[string]any {
 	cfg := map[string]any{}
 	for k, v := range attrs {
@@ -198,12 +191,7 @@ func hydrateFirehose(ctx context.Context, c *Clients, r model.Resource) (map[str
 			}
 		}
 		cfg["extended_s3_configuration"] = e
-	// The other 4 destination types each carry their own Required
-	// s3_configuration block (min_items:1 in the schema) -- Firehose always
-	// needs an S3 backup target even when the primary destination is
-	// something else. tofu validate doesn't catch a missing one because the
-	// outer *_configuration block itself is Optional, but a real plan after
-	// import would show the whole block appearing from nothing.
+	// these destinations each need an s3_configuration
 	case dest.HttpEndpointDestinationDescription != nil:
 		s := dest.HttpEndpointDestinationDescription
 		cfg["destination"] = "http_endpoint"
@@ -285,10 +273,6 @@ func hydrateFirehose(ctx context.Context, c *Clients, r model.Resource) (map[str
 	return cfg, nil
 }
 
-// firehoseS3Config builds the s3_configuration block shared by the
-// redshift/elasticsearch/http_endpoint/splunk destination configs (a
-// different, older S3DestinationDescription shape than extended_s3's own
-// ExtendedS3DestinationDescription).
 func firehoseS3Config(s *fhtypes.S3DestinationDescription) map[string]any {
 	if s == nil {
 		return nil
@@ -345,11 +329,7 @@ func hydrateMSK(ctx context.Context, c *Clients, r model.Resource) (map[string]a
 		}
 		cfg["broker_node_group_info"] = bn
 	}
-	// encryption_info/client_authentication: the schema's shape doesn't
-	// mirror the SDK's structs closely enough for Generic() --
-	// encryption_at_rest_kms_key_arn is a flat scalar in Terraform but
-	// nested under EncryptionAtRest in the SDK, and sasl.iam/sasl.scram are
-	// plain bools in Terraform but {Enabled *bool} structs in the SDK.
+	// SDK nests these differently than the schema
 	if ei := ci.EncryptionInfo; ei != nil {
 		einfo := map[string]any{}
 		if ei.EncryptionAtRest != nil {
@@ -419,9 +399,6 @@ func hydrateMQ(ctx context.Context, c *Clients, r model.Resource) (map[string]an
 	if len(out.SecurityGroups) > 0 {
 		cfg["security_groups"] = toAny(out.SecurityGroups)
 	}
-	// encryption_options/logs/configuration: a broker with a custom
-	// configuration applied has nothing else recoverable describing it
-	// without these.
 	if eo := out.EncryptionOptions; eo != nil {
 		m := map[string]any{}
 		if eo.UseAwsOwnedKey != nil {
@@ -513,12 +490,7 @@ func hydrateEventRule(ctx context.Context, c *Clients, r model.Resource) (map[st
 	if err != nil {
 		return nil, err
 	}
-	// r.ID is "rule-name" on the default bus, but SplitResource only splits
-	// on the FIRST '/' of the ARN's resource segment ("rule/bus-name/rule-name"),
-	// so a custom-bus rule's ID actually arrives as "bus-name/rule-name" --
-	// passing that whole string as DescribeRule's bare Name (with no
-	// EventBusName) looks up the wrong rule on the default bus entirely and
-	// 404s.
+	// custom-bus rule IDs arrive as bus/rule
 	ruleName, busName := r.ID, ""
 	if i := strings.LastIndexByte(r.ID, '/'); i >= 0 {
 		busName, ruleName = r.ID[:i], r.ID[i+1:]
@@ -535,7 +507,6 @@ func hydrateEventRule(ctx context.Context, c *Clients, r model.Resource) (map[st
 	if err != nil {
 		return nil, err
 	}
-	// State ("ENABLED"/"DISABLED") -> the v6 `state` attribute takes those verbatim
 	if s := string(out.State); s != "" {
 		cfg["state"] = s
 	}

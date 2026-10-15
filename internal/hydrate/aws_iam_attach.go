@@ -150,13 +150,6 @@ func fanoutGroupAttachments(ctx context.Context, c *Clients, parent model.Resour
 			Config: map[string]any{"group": name, "policy_arn": arn},
 		})
 	}
-	// Membership itself is emitted from the user side only (fanoutUser's
-	// aws_iam_user_group_membership, one resource per user listing that
-	// user's groups) -- not duplicated here as aws_iam_group_membership.
-	// Both resources model the exact same real memberships, but each is an
-	// exclusive-list type that fights the other on any future apply (the
-	// provider's own docs warn against combining them); every pairing is
-	// still fully covered from the user side, so nothing is lost by not
-	// also emitting it from the group side.
+	// membership comes from the user side only
 	return kids, nil
 }

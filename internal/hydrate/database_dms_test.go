@@ -7,12 +7,7 @@ import (
 	dmstypes "github.com/aws/aws-sdk-go-v2/service/databasemigrationservice/types"
 )
 
-// Engine-specific settings map onto the schema almost entirely by SDK field
-// name -- the one thing that breaks it is nameconv.Snake mishandling
-// MySQL/MongoDb/PostgreSQL (MySQLSettings -> my_sql_settings instead of
-// mysql_settings, MongoDbSettings -> mongo_db_settings instead of
-// mongodb_settings, PostgreSQLSettings -> postgre_sql_settings instead of
-// postgres_settings).
+// MySQL/MongoDb/PostgreSQL settings blocks map by name.
 func TestDMSEndpointSettingsShape(t *testing.T) {
 	sch, err := schemaFor("aws_dms_endpoint")
 	if err != nil {

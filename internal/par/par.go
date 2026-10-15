@@ -1,12 +1,9 @@
-// Package par runs work concurrently with a bound on how much runs at once.
+// Package par runs bounded concurrent work.
 package par
 
 import "sync"
 
-// Each calls fn once per item, with at most limit calls in flight (limit <= 0
-// means no bound), and returns when every call has. fn must be safe to call
-// concurrently; collecting results is the caller's job, typically under its
-// own mutex.
+// Each runs fn on items, limit at once.
 func Each[T any](items []T, limit int, fn func(T)) {
 	if limit <= 0 || limit > len(items) {
 		limit = len(items)

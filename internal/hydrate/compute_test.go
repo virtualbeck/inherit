@@ -8,12 +8,7 @@ import (
 )
 
 func TestEMREbsConfig(t *testing.T) {
-	// AWS returns one EbsBlockDevice per actually-attached volume; the real
-	// provider groups identical (type, size, iops, throughput) devices into
-	// one ebs_config entry with volumes_per_instance set to the count --
-	// ebs_config is a Set and volumes_per_instance is part of its hash, so
-	// this grouping is required to match what a real Read produces, not
-	// just a nicety.
+	// identical volumes group, as the provider's Read does
 	devs := []emrtypes.EbsBlockDevice{
 		{VolumeSpecification: &emrtypes.VolumeSpecification{VolumeType: aws.String("gp3"), SizeInGB: aws.Int32(100)}},
 		{VolumeSpecification: &emrtypes.VolumeSpecification{VolumeType: aws.String("gp3"), SizeInGB: aws.Int32(100)}},

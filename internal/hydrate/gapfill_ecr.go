@@ -11,14 +11,7 @@ import (
 
 func init() { registerGapFiller(gapFillECR) }
 
-// gapFillECR discovers three account/region-scoped ECR registry settings:
-// registry policy, replication configuration, and pull-through-cache rules.
-// None of these have an ARN or support tagging: GetRegistryPolicy, for
-// example, takes no input at all and always targets the current account's
-// one registry (d.SetId(RegistryId) -- the account ID -- is the whole
-// resource identity), so resourcegroupstaggingapi has no path to ever find
-// them. ECR registries are genuinely per-region (unlike IAM's
-// account-global scope), so this is a plain registerGapFiller, not global.
+// Per-region registry settings; no ARN or tags.
 func gapFillECR(ctx context.Context, c *Clients, region string) ([]model.Resource, error) {
 	cl := ecr.NewFromConfig(c.Cfg(region))
 	var out []model.Resource

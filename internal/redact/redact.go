@@ -1,39 +1,4 @@
-// Package redact strips plaintext secrets out of a hydrated inventory, so
-// neither inventory.json nor the generated .tf files ever carry them. What's
-// removed here is written to a local, gitignored inventory.secrets.json
-// instead (see Split); inventory.json carries only the Sentinel in their
-// place, and internal/emit leaves those attributes to ignore_changes.
-//
-// The fields covered are the ones that legitimately end up in generated
-// Terraform config but routinely hold secrets: Lambda env vars, EC2
-// user_data, and plain (non-SecureString) SSM parameter values. Everything
-// genuinely secret elsewhere (Secrets Manager values, RDS master passwords,
-// SSM SecureString, ...) is already never read or already placeholdered by
-// the hydrators.
-//
-// ECS container_definitions' environment[].value is deliberately NOT
-// covered: unlike the fields above, there's no reliable signal to tell a
-// real secret apart from ordinary plaintext config (log level, hostname,
-// feature flags) short of guessing -- and guessing wrong in either
-// direction is bad, either leaking a real secret or making every delivered
-// project unreadable. AWS itself never treats this field as sensitive (it's
-// plaintext in the live task definition to anyone with ecs:DescribeTaskDefinition;
-// the actually-encrypted path is secrets[], already left alone below). A
-// real secret placed in environment[] instead of secrets[] was already a
-// mistake made outside this tool, in the live AWS account, before inherit
-// ever saw it.
-//
-// One more thing is covered unconditionally, for every resource regardless
-// of type: an AWS access key ID (AKIA.../ASIA...) turning up anywhere in
-// Config, map key or value, at any depth. Confirmed against a real
-// account: IAM users tagged with their own access key ID as the tag KEY
-// (a common way to label "which key is this"), a location none of the
-// field-specific rules above would ever look at. The paired secret is
-// never read by this tool either way -- an access key ID alone can't
-// authenticate -- but it's still a real, live credential's identifier and
-// has no business in resource config. (An aws_iam_access_key resource's own
-// ID/import ID IS the key ID; that one has to stay, or it can't be
-// imported. It lands in inventory.json and imports.tf only.)
+// Package redact moves secrets out of the inventory.
 package redact
 
 import (
@@ -43,16 +8,13 @@ import (
 	"github.com/virtualbeck/inherit/model"
 )
 
-// accessKeyRe matches a 20-character AWS access key ID: AKIA (long-term,
-// an IAM user's own key) or ASIA (temporary, STS-issued).
+// AKIA: long-term key; ASIA: temporary STS key.
 var accessKeyRe = regexp.MustCompile(`^(?:AKIA|ASIA)[A-Z0-9]{16}$`)
 
-// Sentinel replaces a redacted value in inventory.json. internal/emit
-// recognizes it and emits the field with lifecycle.ignore_changes.
+// Sentinel marks a redacted value for ignore_changes.
 const Sentinel = "__inherit_redacted__"
 
-// Secret is one removed value, keyed so inventory.secrets.json can be used
-// to put it back: ResourceARN plus a dotted path into the resource's config.
+// Secret is one removed value, keyed by ARN+path.
 type Secret struct {
 	ResourceARN string `json:"resource_arn"`
 	TFType      string `json:"tf_type"`
@@ -60,9 +22,7 @@ type Secret struct {
 	Value       string `json:"value"`
 }
 
-// Split walks inv in place, replacing covered values with Sentinel, and
-// returns the removed values for inventory.secrets.json. Never nil, so the
-// secrets file is always a valid JSON array.
+// Split redacts inv in place, returning removed values.
 func Split(inv *model.Inventory) []Secret {
 	secrets := []Secret{}
 	add := func(r model.Resource, path, val string) {
@@ -106,8 +66,7 @@ func Split(inv *model.Inventory) []Secret {
 	return secrets
 }
 
-// redactLambdaEnv handles both shapes Generic() might produce for the
-// environment block: a one-element []any of maps, or a bare map.
+// Generic() yields environment as list or map.
 func redactLambdaEnv(r model.Resource, cfg map[string]any, add func(model.Resource, string, string)) {
 	vars := lambdaEnvVars(cfg)
 	if vars == nil {
@@ -140,13 +99,7 @@ func lambdaEnvVars(cfg map[string]any) map[string]any {
 	return nil
 }
 
-// redactAccessKeyIDs walks every string anywhere in cfg -- map keys and
-// values, at any depth -- and redacts anything shaped like an AWS access
-// key ID. Not gated by TFType, attribute name, or "this looks like a tags
-// map": an access key ID can turn up anywhere a human decided to jot one
-// down, most commonly a tag but not provably only there, and the pattern
-// is specific enough (20 chars, AKIA/ASIA-prefixed) that scanning
-// everything costs nothing in false positives.
+// Key IDs can appear anywhere, so scan everything.
 func redactAccessKeyIDs(r model.Resource, cfg map[string]any, add func(model.Resource, string, string)) {
 	redactAccessKeyIDsAt(r, cfg, "", add)
 }

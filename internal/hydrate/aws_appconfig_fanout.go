@@ -10,12 +10,7 @@ import (
 
 func init() { registerFanout("aws_appconfig_application", fanoutAppConfigChildren) }
 
-// fanoutAppConfigChildren expands an application into its environments and
-// configuration profiles -- both nested under it (ARN
-// application/<id>/environment|configurationprofile/<childId>), unlike
-// deployment strategies, which are account-level and reusable across
-// applications, so they're discovered independently via the normal
-// tagging-API sweep instead (arnToTF), not here.
+// Environments and profiles; strategies come from discovery.
 func fanoutAppConfigChildren(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	cl := appconfig.NewFromConfig(c.Cfg(parent.Region))
 	appID := parent.ID
@@ -53,9 +48,7 @@ func fanoutAppConfigChildren(ctx context.Context, c *Clients, parent model.Resou
 			if len(tags) > 0 {
 				cfg["tags"] = tags
 			}
-			// import id is "EnvironmentID:ApplicationID" -- not the
-			// application-first/slash-joined shape the ARN's own path
-			// would suggest.
+			// import ID is EnvironmentID:ApplicationID
 			importID := envID + ":" + appID
 			kids = append(kids, model.Resource{
 				Service: "appconfig", Type: "environment", TFType: "aws_appconfig_environment",
@@ -78,8 +71,7 @@ func fanoutAppConfigChildren(ctx context.Context, c *Clients, parent model.Resou
 		}
 		for _, p := range out.Items {
 			profID := aws.ToString(p.Id)
-			// the list summary is missing kms_key_identifier/retrieval_role_arn/
-			// validator -- GetConfigurationProfile is the only way to get them.
+			// only Get returns these fields
 			full, ferr := cl.GetConfigurationProfile(ctx, &appconfig.GetConfigurationProfileInput{
 				ApplicationId: &appID, ConfigurationProfileId: &profID,
 			})
@@ -117,9 +109,7 @@ func fanoutAppConfigChildren(ctx context.Context, c *Clients, parent model.Resou
 			if len(tags) > 0 {
 				cfg["tags"] = tags
 			}
-			// import id is "ConfigurationProfileID:ApplicationID" --
-			// same profile-first/colon-joined shape as the environment
-			// case above.
+			// import ID is ConfigurationProfileID:ApplicationID
 			importID := profID + ":" + appID
 			kids = append(kids, model.Resource{
 				Service: "appconfig", Type: "configurationprofile", TFType: "aws_appconfig_configuration_profile",

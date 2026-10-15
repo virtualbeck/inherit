@@ -8,15 +8,7 @@ import (
 	"github.com/virtualbeck/inherit/model"
 )
 
-// hydrateClientVPNEndpoint uses Generic() for the bulk (client_login_banner_options/
-// client_route_enforcement_options/connection_log_options/transit_gateway_configuration
-// are all genuine nested *Response-suffixed structs whose own field names
-// already match the schema) but authentication_options is hand-built: the
-// schema models it as a flat set of {type, active_directory_id,
-// saml_provider_arn, self_service_saml_provider_arn, root_certificate_chain_arn}
-// per entry, while the SDK nests those under three separate sub-structs
-// (ActiveDirectory/FederatedAuthentication/MutualAuthentication) Generic()
-// has no way to flatten automatically.
+// Generic() for most; authentication_options is hand-flattened.
 func init() { register("aws_ec2_client_vpn_endpoint", hydrateClientVPNEndpoint) }
 
 func hydrateClientVPNEndpoint(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {

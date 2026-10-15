@@ -56,10 +56,7 @@ func hydrateLB(ctx context.Context, c *Clients, r model.Resource) (map[string]an
 	delete(cfg, "availability_zones")
 	delete(cfg, "vpc_id") // computed
 
-	// DescribeLoadBalancers doesn't carry these -- they're a separate
-	// per-LB attribute bag the provider reads on every plan. Only map the
-	// common boolean/int ones with a direct schema attribute; anything
-	// unrecognized (access_logs.*, ipv6 settings, etc.) is left alone.
+	// separate attribute bag; known keys only
 	if attrs, aerr := cl.DescribeLoadBalancerAttributes(ctx, &elb.DescribeLoadBalancerAttributesInput{LoadBalancerArn: &r.ARN}); aerr == nil {
 		for _, a := range attrs.Attributes {
 			k, v := aws.ToString(a.Key), aws.ToString(a.Value)
@@ -109,17 +106,13 @@ func hydrateListener(ctx context.Context, c *Clients, r model.Resource) (map[str
 	if v := aws.ToString(l.SslPolicy); v != "" {
 		cfg["ssl_policy"] = v
 	}
-	// the listener's own default certificate; additional SNI certs are
-	// separate aws_lb_listener_certificate resources (fanoutListenerRules).
+	// default cert; SNI certs are separate resources
 	if len(l.Certificates) > 0 {
 		if v := aws.ToString(l.Certificates[0].CertificateArn); v != "" {
 			cfg["certificate_arn"] = v
 		}
 	}
-	// reuse the same action builder as fanoutListenerRules (aws_lb_rules.go)
-	// so a simple single-target-group forward carries the same
-	// target_group_arn form, and anything else (weighted/sticky forwards,
-	// redirect, fixed-response) gets its full nested block.
+	// same action builder as listener rules
 	if acts := lbActions(l.DefaultActions); len(acts) > 0 {
 		cfg["default_action"] = acts
 	}

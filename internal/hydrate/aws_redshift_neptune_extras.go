@@ -154,8 +154,6 @@ func neptuneTagMap(tags []neptunetypes.Tag) map[string]string {
 	return m
 }
 
-// fanoutNeptuneCluster expands a Neptune cluster into its member instances
-// and any custom cluster endpoints.
 func fanoutNeptuneCluster(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	cl := neptune.NewFromConfig(c.Cfg(parent.Region))
 	clusterID := parent.ID
@@ -193,10 +191,7 @@ func fanoutNeptuneCluster(ctx context.Context, c *Clients, parent model.Resource
 					cfg["neptune_subnet_group_name"] = v
 				}
 			}
-			// DBInstance carries no Tags field at all -- confirmed by a
-			// real fresh import dropping every tag, not assumed. A
-			// separate ListTagsForResource(arn) call is the only way to
-			// get them, same as the cluster endpoint below.
+			// DBInstance has no tags; list them
 			var tags map[string]string
 			if arn := aws.ToString(inst.DBInstanceArn); arn != "" {
 				if lt, terr := cl.ListTagsForResource(ctx, &neptune.ListTagsForResourceInput{ResourceName: &arn}); terr == nil {
@@ -229,20 +224,12 @@ func fanoutNeptuneCluster(ctx context.Context, c *Clients, parent model.Resource
 		for _, ep := range page.DBClusterEndpoints {
 			epID := aws.ToString(ep.DBClusterEndpointIdentifier)
 			epType := aws.ToString(ep.EndpointType)
-			// CUSTOM endpoints are the only kind a user manages -- the
-			// default "reader"/"writer" endpoints Neptune creates
-			// automatically per cluster aren't separately importable
-			// resources.
+			// only CUSTOM endpoints are user-managed
 			if epID == "" || epType != "CUSTOM" {
 				continue
 			}
 			id := clusterID + ":" + epID
-			// EndpointType ("CUSTOM" here, already checked above) says WHO
-			// created the endpoint; CustomEndpointType ("ANY"/"READER"/
-			// "WRITER") is the schema's own endpoint_type -- the routing
-			// behavior. Confirmed by a real tofu validate failure using
-			// EndpointType for both ("expected endpoint_type to be one of
-			// [ANY READER WRITER], got CUSTOM"), not assumed upfront.
+			// CustomEndpointType is the schema's endpoint_type
 			cfg := map[string]any{
 				"cluster_endpoint_identifier": epID,
 				"cluster_identifier":          clusterID,
@@ -254,8 +241,7 @@ func fanoutNeptuneCluster(ctx context.Context, c *Clients, parent model.Resource
 			if len(ep.ExcludedMembers) > 0 {
 				cfg["excluded_members"] = toAny(ep.ExcludedMembers)
 			}
-			// same tags gap as the cluster instance above: DBClusterEndpoint
-			// carries no Tags field at all.
+			// no tags on endpoints either
 			var tags map[string]string
 			if arn := aws.ToString(ep.DBClusterEndpointArn); arn != "" {
 				if lt, terr := cl.ListTagsForResource(ctx, &neptune.ListTagsForResourceInput{ResourceName: &arn}); terr == nil {
@@ -282,14 +268,7 @@ func fanoutNeptuneCluster(ctx context.Context, c *Clients, parent model.Resource
 	return kids, nil
 }
 
-// gapFillNeptuneEventSubscriptions discovers Neptune event subscriptions
-// directly via Neptune's own DescribeEventSubscriptions, sidestepping the
-// ARN dispatch entirely: its ARN segment ("rds:es:name", confirmed against
-// the real provider's own ARN check) is shared with RDS's own (currently
-// unimplemented) event subscription type, and unlike cluster parameter
-// groups there's no "NotFoundFault, so try the other service" signal to
-// dispatch on cheaply -- DescribeEventSubscriptions succeeds either way,
-// it just might return an empty list.
+// Shared ARN segment with RDS; query Neptune directly.
 func gapFillNeptuneEventSubscriptions(ctx context.Context, c *Clients, region string) ([]model.Resource, error) {
 	cl := neptune.NewFromConfig(c.Cfg(region))
 	var out []model.Resource

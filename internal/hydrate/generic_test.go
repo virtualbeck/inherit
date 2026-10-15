@@ -13,7 +13,7 @@ func TestGenericFiltersToSchema(t *testing.T) {
 	}
 	vpc, _ := sch.Resource("aws_vpc")
 
-	// a marshalled-SDK-ish payload: real attrs, computed attrs, and junk
+	// real, computed, and junk attributes
 	sdk := map[string]any{
 		"CidrBlock":       "10.0.0.0/16",
 		"InstanceTenancy": "default",
@@ -37,8 +37,7 @@ func TestGenericFiltersToSchema(t *testing.T) {
 	}
 }
 
-// The SDK returns aws_lambda_function.environment as a single object, but the
-// provider models it as list-nested; Generic must still keep the variables.
+// A single SDK object fills a list-nested block.
 func TestGenericKeepsSingleObjectListBlock(t *testing.T) {
 	sch, err := tfschema.Load()
 	if err != nil {
@@ -63,8 +62,7 @@ func TestGenericKeepsSingleObjectListBlock(t *testing.T) {
 	}
 }
 
-// A vpc_config the SDK returns with only optional fields set (non-VPC lambda)
-// must be dropped, not emitted incomplete (subnet_ids/security_group_ids required).
+// Blocks missing required fields are dropped.
 func TestGenericDropsIncompleteRequiredBlock(t *testing.T) {
 	sch, err := tfschema.Load()
 	if err != nil {
@@ -100,7 +98,6 @@ func TestRegistryPopulated(t *testing.T) {
 			t.Errorf("no hydrator registered for %s", want)
 		}
 	}
-	// every hydrator target must exist in the arn map or be reachable
 	for tf := range registry {
 		if _, err := schemaFor(tf); err != nil {
 			t.Errorf("%s: %v", tf, err)

@@ -12,9 +12,7 @@ func init() {
 	registerFanout("aws_api_gateway_rest_api", fanoutRestAPI)
 }
 
-// fanoutRestAPI expands a REST API into its resource / method / integration
-// tree plus authorizers, models, validators, deployments, stages and any
-// customized gateway responses. Each child imports with a compound id.
+// REST API tree, children imported by compound ID.
 func fanoutRestAPI(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	cl := agw.NewFromConfig(c.Cfg(parent.Region))
 	api := parent.ID
@@ -29,7 +27,6 @@ func fanoutRestAPI(ctx context.Context, c *Clients, parent model.Resource) ([]mo
 		})
 	}
 
-	// --- resource / method / integration tree ---------------------------
 	p := agw.NewGetResourcesPaginator(cl, &agw.GetResourcesInput{
 		RestApiId: &api, Embed: []string{"methods"}, Limit: aws.Int32(500),
 	})
@@ -152,7 +149,6 @@ func fanoutRestAPI(ctx context.Context, c *Clients, parent model.Resource) ([]mo
 		}
 	}
 
-	// --- authorizers ---------------------------------------------------
 	if az, err := cl.GetAuthorizers(ctx, &agw.GetAuthorizersInput{RestApiId: &api}); err == nil {
 		for _, a := range az.Items {
 			id := aws.ToString(a.Id)
@@ -182,7 +178,6 @@ func fanoutRestAPI(ctx context.Context, c *Clients, parent model.Resource) ([]mo
 		}
 	}
 
-	// --- request validators ------------------------------------------
 	if rv, err := cl.GetRequestValidators(ctx, &agw.GetRequestValidatorsInput{RestApiId: &api}); err == nil {
 		for _, v := range rv.Items {
 			id := aws.ToString(v.Id)
@@ -194,7 +189,6 @@ func fanoutRestAPI(ctx context.Context, c *Clients, parent model.Resource) ([]mo
 		}
 	}
 
-	// --- models ------------------------------------------------------
 	if md, err := cl.GetModels(ctx, &agw.GetModelsInput{RestApiId: &api}); err == nil {
 		for _, m := range md.Items {
 			name := aws.ToString(m.Name)
@@ -212,7 +206,6 @@ func fanoutRestAPI(ctx context.Context, c *Clients, parent model.Resource) ([]mo
 		}
 	}
 
-	// --- deployments -----------------------------------------------
 	if dp, err := cl.GetDeployments(ctx, &agw.GetDeploymentsInput{RestApiId: &api}); err == nil {
 		for _, d := range dp.Items {
 			id := aws.ToString(d.Id)
@@ -224,7 +217,6 @@ func fanoutRestAPI(ctx context.Context, c *Clients, parent model.Resource) ([]mo
 		}
 	}
 
-	// --- stages --------------------------------------------------
 	if st, err := cl.GetStages(ctx, &agw.GetStagesInput{RestApiId: &api}); err == nil {
 		for _, s := range st.Item {
 			name := aws.ToString(s.StageName)
@@ -257,7 +249,6 @@ func fanoutRestAPI(ctx context.Context, c *Clients, parent model.Resource) ([]mo
 		}
 	}
 
-	// --- customized gateway responses --------------------------
 	if gr, err := cl.GetGatewayResponses(ctx, &agw.GetGatewayResponsesInput{RestApiId: &api}); err == nil {
 		for _, g := range gr.Items {
 			if g.DefaultResponse { // only the ones actually customized

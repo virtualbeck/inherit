@@ -14,12 +14,7 @@ func init() {
 	registerFanout("aws_dynamodb_table", fanoutDynamoDBReplicas)
 }
 
-// fanoutDynamoDBReplicas expands a global table into its additional-region
-// replicas, a separate top-level resource in the provider (the table's own
-// home region is the "main" replica, implicit in aws_dynamodb_table itself --
-// not redeclared here). Each replica genuinely lives in its own region, so
-// r.Region is set to that replica's real region for the multi-region
-// provider-aliasing machinery, not the parent table's.
+// Replicas in other regions, each in its region.
 func fanoutDynamoDBReplicas(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	out, err := dynamodb.NewFromConfig(c.Cfg(parent.Region)).DescribeTable(ctx, &dynamodb.DescribeTableInput{TableName: &parent.ID})
 	if err != nil || out.Table == nil {
@@ -36,11 +31,7 @@ func fanoutDynamoDBReplicas(ctx context.Context, c *Clients, parent model.Resour
 		if rep.KMSMasterKeyId != nil {
 			cfg["kms_key_arn"] = aws.ToString(rep.KMSMasterKeyId)
 		}
-		// A replica's tags are region-specific and not part of the home
-		// region's DescribeTable response at all -- need ListTagsOfResource
-		// against the replica's OWN regional ARN (same account/table name,
-		// its own region segment), called with a client configured for
-		// that region.
+		// replica tags need its own regional ARN
 		var tags map[string]string
 		if replicaARN := replicaTableARN(globalARN, region); replicaARN != "" {
 			if lt, err := dynamodb.NewFromConfig(c.Cfg(region)).ListTagsOfResource(ctx, &dynamodb.ListTagsOfResourceInput{
@@ -70,14 +61,7 @@ func fanoutDynamoDBReplicas(ctx context.Context, c *Clients, parent model.Resour
 	return kids, nil
 }
 
-// fanoutDynamoDBKinesisDestination discovers an active Kinesis streaming
-// destination on the table -- a separate top-level resource in the
-// provider, one-to-one with the parent table (DynamoDB only supports one
-// active Kinesis destination per table at a time), so at most one child.
-// ENABLING/ACTIVE are the only statuses worth emitting: DISABLING/DISABLED
-// mean the destination is going away or gone, and importing those into
-// Terraform config would just recreate something the account owner already
-// tore down.
+// At most one active Kinesis destination per table.
 func fanoutDynamoDBKinesisDestination(ctx context.Context, c *Clients, parent model.Resource) []model.Resource {
 	cl := dynamodb.NewFromConfig(c.Cfg(parent.Region))
 	out, err := cl.DescribeKinesisStreamingDestination(ctx, &dynamodb.DescribeKinesisStreamingDestinationInput{TableName: &parent.ID})
@@ -107,11 +91,7 @@ func fanoutDynamoDBKinesisDestination(ctx context.Context, c *Clients, parent mo
 	return kids
 }
 
-// fanoutDynamoDBContributorInsights discovers contributor insights on the
-// table itself and on each of its indexes independently -- ListContributorInsights
-// returns one summary per table/index combination that has ever had it
-// configured. Only ENABLED/ENABLING are emitted, same reasoning as the
-// Kinesis destination above.
+// Contributor insights per table and index, if enabled.
 func fanoutDynamoDBContributorInsights(ctx context.Context, c *Clients, parent model.Resource) []model.Resource {
 	cl := dynamodb.NewFromConfig(c.Cfg(parent.Region))
 	var kids []model.Resource
@@ -132,13 +112,9 @@ func fanoutDynamoDBContributorInsights(ctx context.Context, c *Clients, parent m
 			if indexName != "" {
 				cfg["index_name"] = indexName
 			}
-			// the provider's import ID is literally
-			// "name:<table>/index:<indexName>/<accountID>" (empty
-			// indexName segment for the table-level case).
+			// import ID: name:<table>/index:<index>/<account>
 			id := "name:" + parent.ID + "/index:" + indexName + "/" + parent.Account
-			// mode isn't returned by List, only by Describe -- one extra
-			// call per index, same shape as the kinesis destination's own
-			// single-purpose Describe call above.
+			// mode only comes from Describe
 			if full, derr := cl.DescribeContributorInsights(ctx, &dynamodb.DescribeContributorInsightsInput{
 				TableName: &parent.ID, IndexName: s.IndexName,
 			}); derr == nil {
@@ -161,10 +137,7 @@ func fanoutDynamoDBContributorInsights(ctx context.Context, c *Clients, parent m
 	return kids
 }
 
-// replicaTableARN swaps the region segment of a table's home-region ARN
-// ("arn:aws:dynamodb:REGION:ACCOUNT:table/NAME") for a replica's own region
-// -- a DynamoDB global table replica is the same table name/account in a
-// different region, so its ARN differs only in that one segment.
+// Same table, different region segment.
 func replicaTableARN(homeARN, replicaRegion string) string {
 	parts := strings.SplitN(homeARN, ":", 6)
 	if len(parts) != 6 {

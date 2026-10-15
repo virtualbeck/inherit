@@ -18,7 +18,7 @@ func TestNoiseDropsUnusedDefaultsAndRegions(t *testing.T) {
 	inv := model.Inventory{
 		Regions: []string{"us-east-1", "eu-west-1", "ap-south-1"},
 		Resources: []model.Resource{
-			// us-east-1: real work + its own (unused) default VPC
+			// us-east-1: real work plus an unused default VPC
 			{TFType: "aws_s3_bucket", Region: "us-east-1", ID: "b1"},
 			{TFType: "aws_default_vpc", Region: "us-east-1", ID: "vpc-0e1e1e1e"},
 			{TFType: "aws_security_group", Region: "us-east-1", ID: "sg-0e1e1e1e",
@@ -27,10 +27,10 @@ func TestNoiseDropsUnusedDefaultsAndRegions(t *testing.T) {
 				Config: map[string]any{"security_group_id": "sg-0e1e1e1e"}},
 			{TFType: "aws_ebs_encryption_by_default", Region: "us-east-1", ID: "us-east-1",
 				Config: map[string]any{"enabled": false}},
-			// eu-west-1: nothing but defaults + singletons -> whole region goes
+			// eu-west-1: only defaults, so the region goes
 			{TFType: "aws_default_vpc", Region: "eu-west-1", ID: "vpc-0eece0ec"},
 			{TFType: "aws_backup_region_settings", Region: "eu-west-1", ID: "eu-west-1"},
-			// ap-south-1: a used default VPC (an instance lives in it) -> kept
+			// ap-south-1: default VPC in use, so kept
 			{TFType: "aws_default_vpc", Region: "ap-south-1", ID: "vpc-0a0a0a0a"},
 			{TFType: "aws_instance", Region: "ap-south-1", ID: "i-0a0a0a0a",
 				Config: map[string]any{"vpc_security_group_ids": []any{"sg-04a04a04"}, "subnet_id": "subnet-0b0b0b0b", "network": map[string]any{"vpc": "vpc-0a0a0a0a"}}},

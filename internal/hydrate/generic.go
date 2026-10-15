@@ -10,21 +10,15 @@ import (
 	"github.com/virtualbeck/inherit/tfschema"
 )
 
-// tagKeys are handled from the discovery inventory, never from the SDK payload.
+// Tags come from discovery, not the SDK payload.
 var tagKeys = map[string]bool{"tags": true, "tags_all": true, "tag_set": true, "tag_list": true}
 
-// alwaysSkip are attribute names that are server-assigned identity even though
-// the provider marks them optional+computed (so you *may* set them). Emitting
-// them into generated config is always wrong.
+// Server-assigned identity the schema marks settable.
 var alwaysSkip = map[string]bool{
 	"id": true, "arn": true, "unique_id": true, "owner_id": true,
 }
 
-// Generic turns an AWS SDK response value into a Terraform-attribute-shaped map:
-// marshal -> snake-case keys -> apply per-resource key overrides -> keep only
-// what the provider schema says is a settable argument or nested block, at every
-// level of nesting. Purely computed attributes (id, arn, status, ...) fall away
-// because the schema marks them computed-only.
+// Generic maps SDK values onto settable attributes.
 func Generic(sdkVal any, block *tfschema.Block, overrides map[string]string) (map[string]any, error) {
 	if block == nil {
 		return nil, fmt.Errorf("nil schema block")
@@ -40,9 +34,7 @@ func Generic(sdkVal any, block *tfschema.Block, overrides map[string]string) (ma
 	return filterBlock(raw, block, overrides), nil
 }
 
-// filterBlock keeps only schema-known settable args/blocks. Keys are snake-cased
-// here (not up front) so that the values of map(string) attributes -- tag maps,
-// lambda environment variables, ssm parameters -- keep their original casing.
+// Snake-case late so map(string) values keep casing.
 func filterBlock(m map[string]any, b *tfschema.Block, overrides map[string]string) map[string]any {
 	out := make(map[string]any, len(m))
 	for rawK, v := range m {
@@ -61,7 +53,7 @@ func filterBlock(m map[string]any, b *tfschema.Block, overrides map[string]strin
 			case a.Nested != nil:
 				v = filterNested(v, a.Nested, a.NestedMode, overrides)
 			case a.IsMap():
-				// map(string) etc, pass the map through with its keys untouched
+				// map(string): keys stay untouched
 			default:
 				// primitive, or list/set of primitives
 			}
@@ -84,7 +76,7 @@ func filterBlock(m map[string]any, b *tfschema.Block, overrides map[string]strin
 func filterNested(v any, block *tfschema.Block, mode string, overrides map[string]string) any {
 	keep := func(m map[string]any) (map[string]any, bool) {
 		fb := filterBlock(m, block, overrides)
-		// a block we can't fill the required args of is never valid config
+		// missing required args: never valid config
 		return fb, len(fb) > 0 && blockRequiredMet(fb, block)
 	}
 	switch mode {
@@ -130,9 +122,7 @@ func filterNested(v any, block *tfschema.Block, mode string, overrides map[strin
 			}
 			return out
 		case map[string]any:
-			// The provider models this as list/set nesting, but the SDK returns
-			// a single object (e.g. aws_lambda_function.environment). Treat the
-			// object as the one element.
+			// SDK returns one object; schema wants a list
 			if fb, ok := keep(t); ok {
 				return []any{fb}
 			}
@@ -142,8 +132,6 @@ func filterNested(v any, block *tfschema.Block, mode string, overrides map[strin
 	}
 }
 
-// blockRequiredMet reports whether every Required attribute of the block has a
-// value in the filtered map.
 func blockRequiredMet(m map[string]any, b *tfschema.Block) bool {
 	if b == nil {
 		return true
@@ -158,7 +146,6 @@ func blockRequiredMet(m map[string]any, b *tfschema.Block) bool {
 	return true
 }
 
-// toAny widens a []string to []any for a config map.
 func toAny(ss []string) []any {
 	out := make([]any, len(ss))
 	for i, s := range ss {
@@ -167,8 +154,7 @@ func toAny(ss []string) []any {
 	return out
 }
 
-// prune drops values that carry no information: nil, "", empty map, empty slice.
-// false and 0 are kept.
+// prune drops nil and empties; keeps false, 0.
 func prune(v any) (any, bool) {
 	switch t := v.(type) {
 	case nil:
@@ -193,18 +179,11 @@ func lastSlash(s string) int {
 	return -1
 }
 
-// genericHydrator wraps a "fetch one struct" func with the schema-filtered
-// Generic mapping.
 func genericHydrator(tfType string, fetch func(context.Context, *Clients, model.Resource) (any, error)) Hydrator {
 	return genericHydratorOverride(tfType, fetch, nil)
 }
 
-// genericHydratorOverride is genericHydrator with per-resource key overrides
-// (see Generic's overrides param) -- e.g. IAM's User/Group structs marshal
-// to "user_name"/"group_name", which don't exist in the schema at all
-// (aws_iam_user/aws_iam_group both just call the argument "name"); without
-// the override Generic() drops the field entirely as unknown-to-schema,
-// silently omitting a Required attribute.
+// Overrides rename SDK fields to schema names.
 func genericHydratorOverride(tfType string, fetch func(context.Context, *Clients, model.Resource) (any, error), overrides map[string]string) Hydrator {
 	return func(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 		sch, err := schemaFor(tfType)

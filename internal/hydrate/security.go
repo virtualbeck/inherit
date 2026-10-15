@@ -39,26 +39,15 @@ func hydrateKMSKey(ctx context.Context, c *Clients, r model.Resource) (map[strin
 	if m == nil {
 		return nil, fmt.Errorf("not found")
 	}
-	// AWS-managed keys (KeyManager AWS) and replicas of an external primary
-	// cannot be managed by Terraform.
+	// AWS-managed keys and external replicas aren't manageable.
 	if string(m.KeyManager) == "AWS" {
 		return nil, fmt.Errorf("AWS-managed KMS key")
 	}
-	// A key scheduled for deletion still answers DescribeKey (and stays
-	// visible to the tagging-API sweep until it's actually gone), but it's
-	// disabled and about to disappear -- not a real importable resource,
-	// same "discovered but not really there" shape as an INACTIVE ECS
-	// cluster.
+	// pending deletion: not importable
 	if string(m.KeyState) == "PendingDeletion" {
 		return nil, fmt.Errorf("KMS key pending deletion")
 	}
-	// The provider reads the key policy on every plan; if this principal can't
-	// (the key's own policy denies kms:GetKeyPolicy) the plan would fail, so
-	// leave the key out rather than emit an un-plannable resource. The
-	// document itself (unlike IAM's, not URL-encoded) is real, recoverable
-	// data that was being thrown away here -- `policy` is Optional+Computed,
-	// so omitting it doesn't diff, but the whole point of this tool is to
-	// surface what's actually there rather than let it go computed-invisible.
+	// unreadable policy would break plan; skip the key
 	pol := "default"
 	gkp, err := cl.GetKeyPolicy(ctx, &kms.GetKeyPolicyInput{KeyId: &r.ID, PolicyName: &pol})
 	if err != nil {
@@ -71,10 +60,7 @@ func hydrateKMSKey(ctx context.Context, c *Clients, r model.Resource) (map[strin
 	if doc := aws.ToString(gkp.Policy); doc != "" {
 		cfg["policy"] = doc
 	}
-	// KeyMetadata carries no rotation field at all -- it's a separate call,
-	// and the schema default (false) means omitting it here is read by
-	// Terraform as "turn rotation off", diffing against a real key that
-	// actually has it on.
+	// rotation is separate; omitted means off
 	if rot, rerr := cl.GetKeyRotationStatus(ctx, &kms.GetKeyRotationStatusInput{KeyId: &r.ID}); rerr == nil {
 		cfg["enable_key_rotation"] = rot.KeyRotationEnabled
 	}
@@ -94,15 +80,7 @@ func hydrateSecret(ctx context.Context, c *Clients, r model.Resource) (map[strin
 	if err != nil {
 		return nil, err
 	}
-	// DescribeSecretOutput has no "Policy" field at all, so Generic() never
-	// populates the schema's Optional+Computed `policy` attribute here --
-	// that's already correct: the real policy is emitted as its own
-	// aws_secretsmanager_secret_policy resource (fanoutSecretPolicy), and
-	// setting both would be two resources fighting over the same attachment.
-	//
-	// ReplicationStatus (cross-region replicas) isn't part of the flat
-	// struct Generic() walks -- it's a real, recoverable list Generic()
-	// never sees the shape of.
+	// policy is its own resource; replicas need ReplicationStatus
 	var replicas []any
 	for _, rs := range out.ReplicationStatus {
 		region := aws.ToString(rs.Region)
@@ -134,12 +112,7 @@ func hydrateACM(ctx context.Context, c *Clients, r model.Resource) (map[string]a
 	if err != nil {
 		return nil, err
 	}
-	// A real account returned "RSA-2048" (hyphen) for key_algorithm on an
-	// older/imported certificate; the SDK's own enum constants (and the
-	// provider's validator) only recognize the underscore form ("RSA_2048").
-	// DescribeCertificate's KeyAlgorithm is a bare string type with no
-	// server-side normalization, so ACM itself is inconsistent here, not us --
-	// normalize on the way out.
+	// ACM may return RSA-2048; schema wants RSA_2048
 	if v, ok := cfg["key_algorithm"].(string); ok {
 		cfg["key_algorithm"] = strings.ReplaceAll(v, "-", "_")
 	}
@@ -159,11 +132,7 @@ func hydrateGuardDutyDetector(ctx context.Context, c *Clients, r model.Resource)
 	if v := string(out.FindingPublishingFrequency); v != "" {
 		cfg["finding_publishing_frequency"] = v
 	}
-	// DataSources is deprecated in favor of Features, but the vendored
-	// provider schema for this resource only models the older datasources{}
-	// block (Features is its own separate aws_guardduty_detector_feature
-	// resource, not registered here) -- so this is still the real,
-	// recoverable value for what this schema expects.
+	// this schema still models datasources, not features
 	if ds := out.DataSources; ds != nil {
 		block := map[string]any{}
 		if k := ds.Kubernetes; k != nil && k.AuditLogs != nil {
@@ -203,8 +172,7 @@ func hydrateConfigRule(ctx context.Context, c *Clients, r model.Resource) (map[s
 		return nil, fmt.Errorf("not found")
 	}
 	rule := out.ConfigRules[0]
-	// ControlTower / Security Hub manage their own rules; adopting them fights
-	// the managing service.
+	// service-managed rules aren't adopted
 	if rule.CreatedBy != nil && aws.ToString(rule.CreatedBy) != "" {
 		return nil, fmt.Errorf("service-managed rule (%s)", aws.ToString(rule.CreatedBy))
 	}
@@ -274,9 +242,7 @@ func hydrateRAMShare(ctx context.Context, c *Clients, r model.Resource) (map[str
 	if s.AllowExternalPrincipals != nil {
 		cfg["allow_external_principals"] = *s.AllowExternalPrincipals
 	}
-	// managed permission ARNs are a separate call, not part of ResourceShare
-	// itself; a share using anything but each resource type's default
-	// managed permission needs this to avoid a permanent diff.
+	// non-default permissions need this call
 	if perms, perr := ram.NewFromConfig(c.Cfg(r.Region)).ListResourceSharePermissions(ctx, &ram.ListResourceSharePermissionsInput{
 		ResourceShareArn: &arn,
 	}); perr == nil && len(perms.Permissions) > 0 {

@@ -3,11 +3,7 @@ package hydrate
 import "testing"
 
 func TestFixSelfManagedEndpoints(t *testing.T) {
-	// GetEventSourceMappingConfiguration returns
-	// self_managed_event_source.endpoints as map[string][]string (a list of
-	// bootstrap servers per key), but the schema wants map(string) -- one
-	// comma-joined string per key, matching how the provider itself expects
-	// it in config.
+	// endpoint lists become comma-joined strings
 	cfg := map[string]any{
 		"self_managed_event_source": []any{
 			map[string]any{
@@ -31,8 +27,7 @@ func TestFixSelfManagedEndpoints(t *testing.T) {
 }
 
 func TestFixSelfManagedEndpointsNoOpWhenAbsent(t *testing.T) {
-	// no self_managed_event_source at all (the common case, e.g. an SQS or
-	// Kinesis event source mapping) must not panic or fabricate a block.
+	// no source block: no panic, no block
 	cfg := map[string]any{"function_name": "arn:aws:lambda:us-east-1:1:function:f"}
 	fixSelfManagedEndpoints(cfg)
 	if _, ok := cfg["self_managed_event_source"]; ok {

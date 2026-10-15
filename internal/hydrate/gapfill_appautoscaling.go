@@ -13,25 +13,14 @@ import (
 
 func init() { registerGapFiller(gapFillAppAutoscaling) }
 
-// application auto scaling namespaces worth probing: every namespace the SDK
-// knows about (aastypes.ServiceNamespace.Values()). DescribeScalableTargets/
-// DescribeScalingPolicies are plain read calls even for "custom-resource" --
-// nothing about probing it needs a linked feature, only *registering* a new
-// custom-resource scalable target does (a write operation this tool never
-// performs anyway). A namespace the account doesn't use, or lacks permission
-// for, already errors out cleanly per-page below and just gets skipped.
+// Every SDK namespace; unused ones error and skip.
 var aasNamespaces = aastypes.ServiceNamespace("").Values()
 
-// aasConcurrency is how many namespaces are queried at once per region.
+// Low API rate limit; more gets throttled.
 const aasConcurrency = 2
 
 func gapFillAppAutoscaling(ctx context.Context, c *Clients, region string) ([]model.Resource, error) {
 	cl := aas.NewFromConfig(c.Cfg(region))
-	// Namespaces are independent and most are empty or not permitted, so
-	// query several at once rather than ~15 round trips back to back -- but
-	// not all at once: they share one regional endpoint whose rate limit is
-	// low, and a burst gets throttled into exhausted retries (measured).
-	// Each writes its own slot; the result keeps namespace order.
 	perNS := make([][]model.Resource, len(aasNamespaces))
 	idx := make([]int, len(aasNamespaces))
 	for i := range idx {
@@ -43,8 +32,6 @@ func gapFillAppAutoscaling(ctx context.Context, c *Clients, region string) ([]mo
 	return slices.Concat(perNS...), nil
 }
 
-// aasNamespaceResources lists one namespace's scalable targets and scaling
-// policies; a namespace that errors (not enabled, not permitted) yields none.
 func aasNamespaceResources(ctx context.Context, cl *aas.Client, region string, ns aastypes.ServiceNamespace) []model.Resource {
 	acct := ""
 	var out []model.Resource
@@ -83,10 +70,7 @@ func aasNamespaceResources(ctx context.Context, cl *aas.Client, region string, n
 		}
 	}
 
-	// A scaling policy can't exist without a registered scalable target (AWS
-	// requires the target first and deletes its policies with it), so a
-	// namespace with no targets has no policies: skip the second call. Most
-	// namespaces are empty, and this API's rate limit is low.
+	// no targets means no policies
 	if len(out) == 0 {
 		return nil
 	}

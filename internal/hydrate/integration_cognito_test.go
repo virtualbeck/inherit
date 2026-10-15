@@ -8,32 +8,21 @@ import (
 )
 
 func TestCognitoSchemaAttrs(t *testing.T) {
-	// DescribeUserPool returns every attribute, including the ~20 built-in
-	// standard ones every pool gets automatically. The real
-	// terraform-provider-aws excludes a standard-named attribute from state
-	// only when it exactly (reflect.DeepEqual) matches its own hardcoded
-	// definition (cognitoStandardAttrs mirrors that table) -- so our config
-	// must mirror the same test, not just "is this name in the standard
-	// set" or "is this name short enough".
+	// Exclude only exact standard-attribute matches, like the provider.
 	attrs := []ciptypes.SchemaAttributeType{
-		// exact match to the standard "email" shape -- the provider's Read
-		// excludes this from state, so config must exclude it too.
+		// exact standard shape: excluded
 		{Name: aws.String("email"), AttributeDataType: ciptypes.AttributeDataTypeString,
 			Mutable: aws.Bool(true), Required: aws.Bool(false), DeveloperOnlyAttribute: aws.Bool(false),
 			StringAttributeConstraints: &ciptypes.StringAttributeConstraintsType{
 				MinLength: aws.String("0"), MaxLength: aws.String("2048"),
 			}},
-		// standard name, but Required: true -- doesn't match the standard
-		// shape (which is Required: false), so the provider's Read does NOT
-		// exclude it.
+		// standard name, but Required: kept
 		{Name: aws.String("family_name"), AttributeDataType: ciptypes.AttributeDataTypeString,
 			Mutable: aws.Bool(true), Required: aws.Bool(true), DeveloperOnlyAttribute: aws.Bool(false),
 			StringAttributeConstraints: &ciptypes.StringAttributeConstraintsType{
 				MinLength: aws.String("0"), MaxLength: aws.String("2048"),
 			}},
-		// exact match to the standard "phone_number_verified" shape --
-		// excluded both by the standard-shape match and, if it somehow
-		// weren't, by the 20-char cap (22 chars).
+		// exact standard shape, and over 20 chars
 		{Name: aws.String("phone_number_verified"), AttributeDataType: ciptypes.AttributeDataTypeBoolean,
 			Mutable: aws.Bool(true), Required: aws.Bool(false), DeveloperOnlyAttribute: aws.Bool(false)},
 		{Name: aws.String("custom:tenant_id"), AttributeDataType: ciptypes.AttributeDataTypeString,
@@ -90,10 +79,7 @@ func TestCognitoSchemaAttrs(t *testing.T) {
 }
 
 func TestCognitoMatchesStandardAttr(t *testing.T) {
-	// "identities" is a separate special case in the real provider (added by
-	// a Cognito Identity Provider integration, not part of the main standard
-	// table) but must be excluded the same way -- an empty
-	// StringAttributeConstraints{}, not nil and not a populated one.
+	// identities is a special case, excluded too
 	identities := ciptypes.SchemaAttributeType{
 		AttributeDataType: ciptypes.AttributeDataTypeString, DeveloperOnlyAttribute: aws.Bool(false),
 		Mutable: aws.Bool(true), Required: aws.Bool(false), Name: aws.String("identities"),

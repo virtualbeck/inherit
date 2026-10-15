@@ -79,8 +79,6 @@ func hydrateR53RQueryLogConfig(ctx context.Context, c *Clients, r model.Resource
 	}, nil
 }
 
-// fanoutR53RFirewallRules expands a rule group into its individual rules and
-// any VPC associations, each a separate top-level resource in the provider.
 func fanoutR53RFirewallRules(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	cl := route53resolver.NewFromConfig(c.Cfg(parent.Region))
 	groupID := parent.ID
@@ -149,10 +147,7 @@ func fanoutR53RFirewallRules(ctx context.Context, c *Clients, parent model.Resou
 			if v := string(a.MutationProtection); v != "" {
 				cfg["mutation_protection"] = v
 			}
-			// FirewallRuleGroupAssociation carries no Tags field at all --
-			// confirmed by a real fresh import dropping every tag, not
-			// assumed. A separate ListTagsForResource(arn) call is the
-			// only way to get them.
+			// no tags on associations; list them
 			var tags map[string]string
 			if arn := aws.ToString(a.Arn); arn != "" {
 				if lt, terr := cl.ListTagsForResource(ctx, &route53resolver.ListTagsForResourceInput{ResourceArn: &arn}); terr == nil {
@@ -186,8 +181,6 @@ func fanoutR53RFirewallRules(ctx context.Context, c *Clients, parent model.Resou
 	return kids, nil
 }
 
-// fanoutR53RQueryLogConfigAssociations expands a query log config into its
-// VPC associations.
 func fanoutR53RQueryLogConfigAssociations(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	cl := route53resolver.NewFromConfig(c.Cfg(parent.Region))
 	configID := parent.ID

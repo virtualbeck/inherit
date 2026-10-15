@@ -1,11 +1,4 @@
-// Package prune drops discovery noise from a hydrated inventory: the
-// resources AWS materializes in every region whether or not the account
-// uses that region (the default VPC and its default security group, EBS
-// encryption / Backup region settings and other per-region configuration
-// singletons), and then any region left with nothing real in it.
-//
-// A default VPC that something is actually attached to is kept -- it's
-// load-bearing. Everything here is off with --include-defaults.
+// Package prune drops AWS-created defaults and empty regions.
 package prune
 
 import (
@@ -15,31 +8,25 @@ import (
 	"github.com/virtualbeck/inherit/model"
 )
 
-// Options controls a prune pass.
 type Options struct {
-	// IncludeDefaults keeps every default / singleton resource and every
-	// region -- a full no-op. The escape hatch for "codify everything".
+	// IncludeDefaults disables pruning entirely.
 	IncludeDefaults bool
-	// KeepAllRegions prunes default/singleton noise but never drops a whole
-	// region. Set when the user passed an explicit --regions list.
+	// KeepAllRegions prunes resources but never whole regions.
 	KeepAllRegions bool
 }
 
-// Report is what a prune pass removed.
 type Report struct {
-	Regions    []string // regions dropped entirely (had nothing real left)
-	Defaults   int      // AWS-managed default-network resources removed
-	Singletons int      // per-region configuration singletons removed
+	Regions    []string
+	Defaults   int
+	Singletons int
 }
 
-// Empty reports whether the pass removed nothing.
 func (r Report) Empty() bool {
 	return len(r.Regions) == 0 && r.Defaults == 0 && r.Singletons == 0
 }
 
 var awsIDRe = regexp.MustCompile(`^(?:vpc|subnet|sg)-[0-9a-f]{8,17}$`)
 
-// defaultNetworkTypes are the resources AWS creates in a fresh VPC / region.
 var defaultNetworkTypes = map[string]bool{
 	"aws_default_vpc":         true,
 	"aws_default_subnet":      true,
@@ -56,31 +43,25 @@ func isSGRule(r model.Resource) bool {
 		r.TFType == "aws_vpc_security_group_egress_rule"
 }
 
-// singletonNoise reports whether r is a per-region configuration singleton
-// carrying only its default (unconfigured) value -- i.e. it exists because
-// AWS always answers the API, not because anyone set anything.
+// singletonNoise: a per-region setting still at its default.
 func singletonNoise(r model.Resource) bool {
 	switch r.TFType {
 	case "aws_backup_region_settings":
-		return true // opt-in/management prefs -- noise in every unused region
+		return true
 	case "aws_ebs_encryption_by_default":
 		on, _ := r.Config["enabled"].(bool)
-		return !on // enabled=true is a deliberate security posture; keep it
+		return !on // enabled is deliberate posture; keep it
 	case "aws_api_gateway_account":
 		return cfgString(r.Config, "cloudwatch_role_arn") == ""
 	}
 	return false
 }
 
-// structurallyNoise reports whether r is a candidate for removal on shape
-// alone, before the "is anything attached?" check. Used both to decide what
-// to drop and to exclude these resources from the reference scan (a default
-// route table pointing at the default VPC must not keep it alive).
+// structurallyNoise: removable by shape, before reference checks.
 func structurallyNoise(r model.Resource) bool {
 	return defaultNetworkTypes[r.TFType] || isDefaultSG(r) || isSGRule(r) || singletonNoise(r)
 }
 
-// Noise removes discovery noise from inv in place and reports what went.
 func Noise(inv *model.Inventory, opt Options) Report {
 	if opt.IncludeDefaults {
 		return Report{}
@@ -93,9 +74,7 @@ func Noise(inv *model.Inventory, opt Options) Report {
 		}
 	}
 
-	// what real resources point at: VPC ids anywhere in config, plus a flag
-	// per region for "references a subnet we didn't discover" (likely a
-	// default subnet -> keep that region's default VPC, conservatively).
+	// Referenced VPCs, and regions using undiscovered subnets.
 	referencedVPC := map[string]bool{}
 	unresolvedSubnetInRegion := map[string]bool{}
 	for _, r := range inv.Resources {
@@ -121,7 +100,6 @@ func Noise(inv *model.Inventory, opt Options) Report {
 		return referencedVPC[id] || unresolvedSubnetInRegion[region]
 	}
 
-	// first pass: which default SGs are pruned, so their rules can follow.
 	prunedDefaultSG := map[string]bool{}
 	for _, r := range inv.Resources {
 		if isDefaultSG(r) && !vpcKept(cfgString(r.Config, "vpc_id"), r.Region) {
@@ -183,7 +161,6 @@ func cfgString(cfg map[string]any, key string) string {
 	return s
 }
 
-// walkStrings calls fn for every string value anywhere in v.
 func walkStrings(v any, fn func(string)) {
 	switch x := v.(type) {
 	case string:

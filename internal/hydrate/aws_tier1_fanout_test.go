@@ -30,8 +30,7 @@ func TestGuarddutyCriterion(t *testing.T) {
 		t.Errorf("equals = %v, want 2 entries", c["equals"])
 	}
 
-	// deprecated fields (Gt/Gte/Lt/Lte/Eq/Neq) must never surface -- only
-	// their non-deprecated replacements are read.
+	// deprecated fields must never surface
 	deprecated := map[string]gdtypes.Condition{
 		"port": {Gt: aws.Int32(80)},
 	}
@@ -103,9 +102,7 @@ func TestS3ACLConfig(t *testing.T) {
 		t.Fatalf("got %d grants, want 1", len(grantList))
 	}
 
-	// a bucket with an enforced ownership setting (no real grants beyond
-	// what GetBucketAcl always returns for the owner) should still produce
-	// something -- only a genuinely nil owner (an error path) returns nil.
+	// only a nil owner returns nil
 	if got := s3ACLConfig(nil, nil); got != nil {
 		t.Errorf("nil owner should return nil, got %v", got)
 	}

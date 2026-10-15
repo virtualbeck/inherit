@@ -12,8 +12,6 @@ func init() {
 	registerFanout("aws_apigatewayv2_api", fanoutAPIGWv2)
 }
 
-// fanoutAPIGWv2 expands an HTTP/WebSocket API into its stages, routes and
-// integrations as standalone resources.
 func fanoutAPIGWv2(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	cl := apigatewayv2.NewFromConfig(c.Cfg(parent.Region))
 	api := parent.ID

@@ -100,14 +100,7 @@ func hydrateAppSync(ctx context.Context, c *Clients, r model.Resource) (map[stri
 	if a.XrayEnabled {
 		cfg["xray_enabled"] = true
 	}
-	// log_config/user_pool_config were dropped entirely before --
-	// CloudWatch logging is routine on a real API, and an API using Cognito
-	// user pool auth (AuthenticationType == AMAZON_COGNITO_USER_POOLS) has
-	// nothing else recoverable at all without user_pool_config. schema
-	// itself isn't fetched: GetIntrospectionSchema returns a derived SDL/
-	// JSON representation, not what was submitted, and the provider's own
-	// Read doesn't populate it either -- same shape as the documented
-	// no-Read-equivalent directive attributes.
+	// schema isn't fetched: introspection isn't the source
 	if lc := a.LogConfig; lc != nil {
 		m := map[string]any{"cloudwatch_logs_role_arn": aws.ToString(lc.CloudWatchLogsRoleArn)}
 		if v := string(lc.FieldLogLevel); v != "" {
@@ -140,12 +133,7 @@ func fetchTransfer(ctx context.Context, c *Clients, r model.Resource) (any, erro
 	return out.Server, nil
 }
 
-// hydrateCodeBuild was a bare genericHydrator until this audit found it
-// silently dropping: build_timeout / queued_timeout (SDK's
-// TimeoutInMinutes / QueuedTimeoutInMinutes don't mechanically snake-case
-// to either schema name), and badge_enabled / badge_url entirely (the
-// schema has them as flat scalars, but the SDK returns a nested *ProjectBadge
-// struct under a key ("badge") the schema doesn't even have).
+// SDK names don't snake-case to timeout/badge attributes.
 func hydrateCodeBuild(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	sch, err := schemaFor("aws_codebuild_project")
 	if err != nil {
@@ -254,12 +242,7 @@ func hydrateCodePipeline(ctx context.Context, c *Clients, r model.Resource) (map
 	return cfg, nil
 }
 
-// hydrateDataSyncAgent is hand-built rather than Generic(): PrivateLinkConfig's
-// fields (private_link_endpoint/security_group_arns/subnet_arns/
-// vpc_endpoint_id) are flat top-level schema attributes, not nested under a
-// "private_link_config" block, so Generic()'s straight JSON round-trip
-// would produce a nested object the schema has no block for at all
-// (dropped silently) instead of flattening it.
+// PrivateLinkConfig fields are flat in the schema.
 func hydrateDataSyncAgent(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	arn := r.ARN
 	out, err := datasync.NewFromConfig(c.Cfg(r.Region)).DescribeAgent(ctx, &datasync.DescribeAgentInput{AgentArn: &arn})
@@ -306,14 +289,7 @@ func hydrateDataSyncTask(ctx context.Context, c *Clients, r model.Resource) (map
 	return cfg, nil
 }
 
-// datasyncS3BucketARNAndSubdir splits a DataSync S3 location's LocationUri
-// ("s3://bucket-name/some/subdirectory") into the schema's separate
-// s3_bucket_arn and (Required) subdirectory attributes -- DescribeLocationS3
-// never returns either field directly; the real provider's Read does this
-// same parsing (terraform-provider-aws's datasync/uri.go). Only the common
-// case (a plain bucket name) is handled; an S3-on-Outposts access point
-// location needs the ARN-aware branch the provider has and isn't handled
-// here, unconfirmed against any real account.
+// Splits s3://bucket/subdir as the provider does.
 func datasyncS3BucketARNAndSubdir(uri string) (bucketARN, subdir string, ok bool) {
 	const prefix = "s3://"
 	if !strings.HasPrefix(uri, prefix) {
@@ -325,9 +301,7 @@ func datasyncS3BucketARNAndSubdir(uri string) (bucketARN, subdir string, ok bool
 		return "", "", false
 	}
 	bucket := rest[:i]
-	// emit's own ARN parameterization rewrites any "arn:<partition>:..."
-	// literal's partition segment to a data-source lookup regardless of
-	// what's written here, so a literal "aws" is correct in every partition.
+	// emit parameterizes the partition later
 	return "arn:aws:s3:::" + bucket, rest[i:], true
 }
 
@@ -372,8 +346,7 @@ func hydrateSSMAssociation(ctx context.Context, c *Clients, r model.Resource) (m
 		cfg["document_version"] = v
 	}
 	if len(a.Parameters) > 0 {
-		// the API returns each value as a list; the provider's `parameters` is
-		// map(string), so collapse single-element lists and comma-join the rest.
+		// lists collapse into the map(string) parameters
 		m := map[string]any{}
 		for k, v := range a.Parameters {
 			switch len(v) {
@@ -398,9 +371,7 @@ func hydrateSSMAssociation(ctx context.Context, c *Clients, r model.Resource) (m
 	if len(targets) > 0 {
 		cfg["targets"] = targets
 	}
-	// ApplyOnlyAtCronInterval / ComplianceSeverity are real, non-zero-value
-	// settings on the association; leaving them out lets the provider default
-	// (false / "UNSPECIFIED") clobber what's actually configured.
+	// omitted, the provider default would clobber these
 	cfg["apply_only_at_cron_interval"] = a.ApplyOnlyAtCronInterval
 	if v := string(a.ComplianceSeverity); v != "" {
 		cfg["compliance_severity"] = v
@@ -450,8 +421,7 @@ func hydrateCloudFormationStack(ctx context.Context, c *Clients, r model.Resourc
 		return nil, fmt.Errorf("not found")
 	}
 	s := out.Stacks[0]
-	// StackSet instances and nested stacks are managed by their StackSet / parent;
-	// adopting them into Terraform fights the managing service.
+	// StackSet instances and nested stacks have owners.
 	if strings.HasPrefix(name, "StackSet-") || s.ParentId != nil || s.RootId != nil {
 		return nil, fmt.Errorf("StackSet / nested stack (managed elsewhere)")
 	}
@@ -486,13 +456,7 @@ func hydrateCloudFormationStack(ctx context.Context, c *Clients, r model.Resourc
 
 func hydrateSSMParameter(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	cl := ssm.NewFromConfig(c.Cfg(r.Region))
-	// The ARN's resource segment ("parameter/tf/route53/baseline/zone_id")
-	// never carries a hierarchical parameter's real leading "/" -- AWS's own
-	// convention for embedding a path in an ARN -- so r.ID is missing it for
-	// any hierarchical parameter. Fetching (or importing) with that name
-	// as-is 400s. Try as discovered first, then with a leading slash added.
-	// GetParameter without WithDecryption is safe to call regardless of
-	// type: for a SecureString it returns the ciphertext, never plaintext.
+	// ARNs drop the leading slash; try both forms.
 	name := r.ID
 	gp, err := cl.GetParameter(ctx, &ssm.GetParameterInput{Name: &name})
 	if err != nil && !strings.HasPrefix(r.ID, "/") {
@@ -509,10 +473,7 @@ func hydrateSSMParameter(ctx context.Context, c *Clients, r model.Resource) (map
 	realName := aws.ToString(p.Name)
 	cfg := map[string]any{"name": realName, "type": string(p.Type)}
 
-	// GetParameter doesn't return Description/Tier; a name-filtered
-	// DescribeParameters picks them up without listing every parameter in
-	// the account (the previous, unpaginated "list everything and find a
-	// match" approach silently missed any parameter past the first page).
+	// Description and Tier only come from DescribeParameters.
 	if dp, err := cl.DescribeParameters(ctx, &ssm.DescribeParametersInput{
 		ParameterFilters: []ssmtypes.ParameterStringFilter{
 			{Key: aws.String("Name"), Option: aws.String("Equals"), Values: []string{realName}},
@@ -525,8 +486,7 @@ func hydrateSSMParameter(ctx context.Context, c *Clients, r model.Resource) (map
 		if t := string(meta.Tier); t != "" && t != "Standard" {
 			cfg["tier"] = t
 		}
-		// KeyId/DataType/AllowedPattern only come back on DescribeParameters'
-		// metadata, never on GetParameter itself -- silently dropped before.
+		// metadata-only fields
 		if k := aws.ToString(meta.KeyId); k != "" && k != "alias/aws/ssm" {
 			cfg["key_id"] = k
 		}
@@ -538,8 +498,7 @@ func hydrateSSMParameter(ctx context.Context, c *Clients, r model.Resource) (map
 		}
 	}
 
-	// the provider requires exactly one of value/insecure_value/value_wo
-	// on every aws_ssm_parameter, regardless of type.
+	// exactly one of value/insecure_value is required
 	if p.Type == ssmtypes.ParameterTypeSecureString {
 		cfg["value"] = ssmSecureValuePlaceholder
 	} else {
@@ -548,14 +507,7 @@ func hydrateSSMParameter(ctx context.Context, c *Clients, r model.Resource) (map
 	return cfg, nil
 }
 
-// ssmSecureValuePlaceholder stands in for a SecureString parameter's value:
-// inherit never decrypts secrets (GetParameter with WithDecryption=true would
-// still be a read-only call, but writing the plaintext into generated HCL
-// and, worse, local state is a data-handling risk this tool doesn't take on
-// unasked). The provider requires exactly one of value/insecure_value/
-// value_wo regardless -- `value` is used (not `insecure_value`) because the
-// provider marks it sensitive and redacts it from plan/console output even
-// though it's just this placeholder.
+// SecureString values are never decrypted.
 const ssmSecureValuePlaceholder = "REPLACE_ME (inherit does not read SecureString values)"
 
 func hydrateCognitoPool(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
@@ -574,11 +526,7 @@ func hydrateCognitoPool(ctx context.Context, c *Clients, r model.Resource) (map[
 	}
 	p := out.UserPool
 
-	// Generic()'s filterNested drops a whole nested block if any one
-	// Required sub-attribute doesn't survive pruning -- both of these got
-	// hit on a real pool (schema entirely empty, email_configuration
-	// missing just from_email_address), so build them explicitly instead of
-	// trusting Generic() for either.
+	// filterNested drops these blocks; build them explicitly
 	if attrs := cognitoSchemaAttrs(p.SchemaAttributes); len(attrs) > 0 {
 		cfg["schema"] = attrs
 	}
@@ -600,8 +548,7 @@ func hydrateCognitoPool(ctx context.Context, c *Clients, r model.Resource) (map[
 		cfg["email_configuration"] = ec
 	}
 
-	// TOTP MFA state isn't part of DescribeUserPool at all -- it's a
-	// separate call.
+	// TOTP MFA is a separate call
 	if mfa, merr := cl.GetUserPoolMfaConfig(ctx, &cognitoidentityprovider.GetUserPoolMfaConfigInput{UserPoolId: &r.ID}); merr == nil {
 		if st := mfa.SoftwareTokenMfaConfiguration; st != nil {
 			cfg["software_token_mfa_configuration"] = map[string]any{"enabled": st.Enabled}
@@ -634,20 +581,7 @@ func cognitoMatchesStandardAttr(a ciptypes.SchemaAttributeType) bool {
 	return false
 }
 
-// cognitoSchemaAttrs builds the schema[] block from DescribeUserPool's
-// SchemaAttributes. DescribeUserPool returns EVERY attribute, including the
-// ~20 built-in standard ones every pool gets automatically -- schema[] is a
-// Set block with no Computed fallback, so state (from Read) diffs against
-// config unless config declares exactly what Read will persist: custom/
-// developer-only attributes always, and a standard-named one only when its
-// real shape doesn't exactly match cognitoStandardAttrs (see there). AWS
-// prefixes custom/dev names with "custom:"/"dev:"; strip that back off
-// since the provider re-derives the prefix from developer_only_attribute.
-// The provider also validates every entry's (unprefixed) name against a
-// hard 20-char cap regardless of standard/custom; skip those too --
-// otherwise unreachable in practice, since every standard name this long
-// (phone_number_verified) matches its exact standard shape above and is
-// already excluded for that reason.
+// Only attributes the provider's Read keeps in state.
 func cognitoSchemaAttrs(schemaAttrs []ciptypes.SchemaAttributeType) []any {
 	var attrs []any
 	for _, a := range schemaAttrs {
@@ -660,7 +594,7 @@ func cognitoSchemaAttrs(schemaAttrs []ciptypes.SchemaAttributeType) []any {
 			stripped = strings.TrimPrefix(name, "dev:")
 		default:
 			if cognitoMatchesStandardAttr(a) {
-				continue // the provider's own Read excludes this exact shape from state too
+				continue // Read excludes this exact shape too
 			}
 		}
 		if len(stripped) > 20 {
@@ -690,19 +624,7 @@ func cognitoSchemaAttrs(schemaAttrs []ciptypes.SchemaAttributeType) []any {
 	return attrs
 }
 
-// cognitoStandardAttrs mirrors terraform-provider-aws's own hardcoded table
-// (userPoolSchemaAttributeMatchesStandardAttribute in its cognitoidp
-// package, plus its separate "identities" case) verbatim, field for field.
-// The provider's Read excludes an attribute from state -- via
-// reflect.DeepEqual against exactly this table -- only when it matches one
-// of these shapes exactly; declaring a match in our config would therefore
-// always be a diff, since it can never appear in state. An attribute whose
-// real shape differs even slightly (e.g. Required: true where every entry
-// here has false) is NOT filtered by the provider and so must be declared,
-// with its real observed values, to match what Read actually persists.
-// Confirmed against a real pool: family_name/given_name came back
-// Required: true (unlike every other standard attribute here, which was
-// Required: false and so correctly absent from state).
+// Mirrors the provider's standard-attribute table exactly.
 var cognitoStandardAttrs = []ciptypes.SchemaAttributeType{
 	cognitoStrAttr("address", true, false, "0", "2048"),
 	cognitoStrAttr("birthdate", true, false, "10", "10"),
@@ -815,8 +737,6 @@ func hydratePatchBaseline(ctx context.Context, c *Clients, r model.Resource) (ma
 	return cfg, nil
 }
 
-// patchFilters turns a PatchFilterGroup into the repeatable global_filter{}
-// block shape (key/values pairs).
 func patchFilters(g *ssmtypes.PatchFilterGroup) []any {
 	if g == nil {
 		return nil
@@ -828,10 +748,7 @@ func patchFilters(g *ssmtypes.PatchFilterGroup) []any {
 	return out
 }
 
-// patchApprovalRules turns a PatchRuleGroup into the repeatable approval_rule{}
-// block shape: one block per PatchRule, each with its own nested
-// patch_filter{} entries. approve_after_days/approve_until_date are mutually
-// exclusive on a real rule -- only whichever the API actually set is emitted.
+// Only the rule's set approve field is emitted.
 func patchApprovalRules(g *ssmtypes.PatchRuleGroup) []any {
 	if g == nil {
 		return nil
@@ -940,8 +857,7 @@ func hydrateSDService(ctx context.Context, c *Clients, r model.Resource) (map[st
 }
 
 func hydrateCognitoIdentityPool(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
-	// r.ID for arn:aws:cognito-identity:...:identitypool/<region>:<guid> is
-	// "<region>:<guid>".
+	// ID is <region>:<guid>
 	id := r.ID
 	out, err := cognitoidentity.NewFromConfig(c.Cfg(r.Region)).DescribeIdentityPool(ctx, &cognitoidentity.DescribeIdentityPoolInput{
 		IdentityPoolId: &id,
@@ -1086,9 +1002,7 @@ func hydrateCloudFormationStackSet(ctx context.Context, c *Clients, r model.Reso
 	if s.ManagedExecution != nil {
 		cfg["managed_execution"] = map[string]any{"active": aws.ToBool(s.ManagedExecution.Active)}
 	}
-	// call_as is a request-time directive (which permission context to act
-	// under), not a real stack-set attribute; DescribeStackSet doesn't return
-	// it. Self-managed stack sets are always called as SELF.
+	// request directive; self-managed sets use SELF
 	cfg["call_as"] = "SELF"
 	return cfg, nil
 }
@@ -1154,8 +1068,7 @@ func hydrateSSMDocument(ctx context.Context, c *Clients, r model.Resource) (map[
 		"document_format": string(out.DocumentFormat),
 		"content":         aws.ToString(out.Content),
 	}
-	// target_type comes from DescribeDocument; the provider stores it verbatim,
-	// so an unset config plans a spurious removal.
+	// unset target_type plans a spurious removal
 	if d, derr := cl.DescribeDocument(ctx, &ssm.DescribeDocumentInput{Name: &name}); derr == nil && d.Document != nil {
 		if v := aws.ToString(d.Document.TargetType); v != "" {
 			cfg["target_type"] = v

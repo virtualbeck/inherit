@@ -17,10 +17,7 @@ func init() {
 	register("aws_transfer_profile", hydrateTransferProfile)
 }
 
-// hydrateTransferAgreement's r.ID arrives as "serverID/agreementID" --
-// discover.go's ARN splitting already leaves it in exactly this shape
-// (confirmed against the real provider's own import id, which uses the
-// identical "/" join), so no extra parsing beyond a single split is needed.
+// r.ID is serverID/agreementID already.
 func hydrateTransferAgreement(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	serverID, agreementID, ok := strings.Cut(r.ID, "/")
 	if !ok {

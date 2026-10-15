@@ -13,8 +13,6 @@ func init() {
 	registerFanout("aws_route53_resolver_rule", fanoutResolverRuleAssociations)
 }
 
-// fanoutResolverRuleAssociations expands a resolver rule into its VPC
-// associations, each a separate top-level resource in the provider.
 func fanoutResolverRuleAssociations(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	cl := route53resolver.NewFromConfig(c.Cfg(parent.Region))
 	var kids []model.Resource

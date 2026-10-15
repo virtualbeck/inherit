@@ -8,9 +8,7 @@ import (
 )
 
 func TestDlmTagsToMap(t *testing.T) {
-	// mirrors the raw shape Generic()'s IsMap() passthrough leaves for a
-	// map(string) schema attribute backed by []Tag{Key,Value} in the SDK --
-	// untouched, PascalCase keys, a list rather than a map.
+	// raw []Tag shape Generic() leaves behind
 	tags := []any{
 		map[string]any{"Key": "Environment", "Value": "dev"},
 		map[string]any{"Key": "Team", "Value": "platform"},
@@ -26,17 +24,13 @@ func TestDlmTagsToMap(t *testing.T) {
 		}
 	}
 
-	// a tag with no key is meaningless and shouldn't survive
 	if got := dlmTagsToMap([]any{map[string]any{"Value": "orphan"}}); len(got) != 0 {
 		t.Errorf("expected a keyless tag to be dropped, got %v", got)
 	}
 }
 
 func TestFixDLMDefaultPolicy(t *testing.T) {
-	// the common case: a regular (non-default) policy. Generic() leaves
-	// default_policy as the SDK's bare bool false; it must vanish entirely,
-	// not survive as `default_policy = false` (not a valid enum value) or
-	// stick around to conflict with policy_details.
+	// regular policy: default_policy must vanish
 	cfg := map[string]any{
 		"description":    "daily snapshots",
 		"policy_details": []any{map[string]any{"resource_types": []any{"VOLUME"}}},
@@ -50,9 +44,7 @@ func TestFixDLMDefaultPolicy(t *testing.T) {
 		t.Error("policy_details should survive for a regular (non-default) policy")
 	}
 
-	// the rare case: one of AWS's own pre-built default policies. Must
-	// become the string enum, and policy_details must NOT be present (the
-	// two conflict).
+	// default policy: enum string, no policy_details
 	cfg = map[string]any{
 		"policy_details": []any{map[string]any{"resource_types": []any{"INSTANCE"}}},
 		"default_policy": true,
@@ -67,12 +59,7 @@ func TestFixDLMDefaultPolicy(t *testing.T) {
 }
 
 func TestDlmSchedules(t *testing.T) {
-	// DLM's GetLifecyclePolicy returns Interval as a non-nil *int32(0) even
-	// when the schedule uses cron_expression (create_rule) or a bare count
-	// (retain_rule) instead of an interval -- the schema rejects interval=0
-	// outright (an enum for create_rule, a "must be >= 1" range for
-	// retain_rule), so a naive "!= nil" check lets a bogus 0 through into
-	// generated config.
+	// non-nil *0 must not reach config
 	cronBased := int32(0)
 	retainByCount := int32(0)
 	schedules := []dlmtypes.Schedule{
@@ -111,7 +98,6 @@ func TestDlmSchedules(t *testing.T) {
 		t.Errorf("retain_rule.count = %v, want 2", rr["count"])
 	}
 
-	// the interval-based case must still come through when it's real.
 	realInterval := int32(24)
 	got = dlmSchedules([]dlmtypes.Schedule{{
 		Name: aws.String("hourly-ish"),

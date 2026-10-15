@@ -28,17 +28,9 @@ func TestImportID(t *testing.T) {
 		{model.Resource{TFType: "aws_lb_target_group", ID: "my-tg/abc123", ARN: "arn:aws:elasticloadbalancing:us-east-1:1:targetgroup/my-tg/abc123"}, "arn:aws:elasticloadbalancing:us-east-1:1:targetgroup/my-tg/abc123"},
 		{model.Resource{TFType: "aws_acm_certificate", ID: "abc-uuid", ARN: "arn:aws:acm:us-east-1:1:certificate/abc-uuid"}, "arn:aws:acm:us-east-1:1:certificate/abc-uuid"},
 		{model.Resource{TFType: "aws_lb_listener", ID: "app/my-alb/lbid/listenerid", ARN: "arn:aws:elasticloadbalancing:us-east-1:1:listener/app/my-alb/lbid/listenerid"}, "arn:aws:elasticloadbalancing:us-east-1:1:listener/app/my-alb/lbid/listenerid"},
-		// r.ID ("family:revision") is the documented legacy import format
-		// and looks like a perfectly valid id, but the provider now
-		// requires the ARN for this type with no fallback -- confirmed
-		// against a real account ("arn: invalid prefix", no diagnostic
-		// context at all since it fails deep inside the provider's own
-		// ARN-detection, not a surfaced validation).
+		// the provider now requires the ARN here
 		{model.Resource{TFType: "aws_ecs_task_definition", ID: "my-task:5", ARN: "arn:aws:ecs:us-east-1:1:task-definition/my-task:5"}, "arn:aws:ecs:us-east-1:1:task-definition/my-task:5"},
-		// r.ID is the ARN's resource segment, which never carries a
-		// hierarchical parameter's real leading "/" -- the hydrator already
-		// resolved and confirmed the true name against the live API and put
-		// it in Config, so importID must prefer that over re-guessing from ID.
+		// the hydrator resolved the leading-slash name
 		{model.Resource{TFType: "aws_ssm_parameter", ID: "tf/route53/baseline/zone_id",
 			Config: map[string]any{"name": "/tf/route53/baseline/zone_id"}}, "/tf/route53/baseline/zone_id"},
 		{model.Resource{TFType: "aws_ssm_parameter", ID: "simple-name"}, "simple-name"}, // no Config -> fall back to ID

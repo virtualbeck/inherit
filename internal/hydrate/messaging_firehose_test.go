@@ -7,10 +7,7 @@ import (
 	fhtypes "github.com/aws/aws-sdk-go-v2/service/firehose/types"
 )
 
-// TestFirehoseS3Config guards the Required s3_configuration block that
-// redshift/elasticsearch/http_endpoint/splunk destinations all need (min
-// items 1 in the schema) but which the hydrator used to never populate at
-// all for anything but extended_s3.
+// Non-S3 destinations need their required s3_configuration.
 func TestFirehoseS3Config(t *testing.T) {
 	if got := firehoseS3Config(nil); got != nil {
 		t.Errorf("firehoseS3Config(nil) = %v, want nil", got)

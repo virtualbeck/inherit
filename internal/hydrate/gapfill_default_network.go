@@ -11,22 +11,7 @@ import (
 
 func init() { registerGapFiller(gapFillDefaultNetwork) }
 
-// gapFillDefaultNetwork discovers a region's default VPC and default
-// security group directly: neither shows up via the normal tagging-API
-// sweep, since nobody tags the VPC/security-group AWS auto-creates per
-// region and resourcegroupstaggingapi:GetResources only ever returns
-// tagged resources.
-//
-// Reuses the existing registered hydrators (via hydrateRegistered, not a
-// bare registry lookup -- see its own doc for why) so hydration logic --
-// including hydrateVPC's own retype to aws_default_vpc -- isn't
-// duplicated; this only adds the discovery step. The default security
-// group deliberately stays plain aws_security_group: unlike network ACLs
-// (rejected as aws_network_acl when they're a VPC's default), the
-// provider's own Read/Create for security groups doesn't reject a
-// "default"-named group -- so no retype, and its existing SG-rule fanout
-// (keyed on "aws_security_group") keeps working with no extra
-// registration needed.
+// Untagged defaults are invisible to the Tagging API.
 func gapFillDefaultNetwork(ctx context.Context, c *Clients, region string) ([]model.Resource, error) {
 	cl := ec2.NewFromConfig(c.Cfg(region))
 	var out []model.Resource
@@ -76,11 +61,7 @@ func gapFillDefaultNetwork(ctx context.Context, c *Clients, region string) ([]mo
 	return out, nil
 }
 
-// ec2TagMap converts EC2's []Tag{Key,Value} into a plain map, the shape
-// model.Resource.Tags and cfg["tags"] both expect. "aws:"-prefixed
-// reserved tags are already stripped at discovery time for the normal
-// tagging-API sweep (internal/discover); this mirrors that for a
-// gap-filled resource, which bypasses that path entirely.
+// ec2TagMap converts []Tag to a map, dropping aws:*.
 func ec2TagMap(tags []ec2types.Tag) map[string]string {
 	if len(tags) == 0 {
 		return nil

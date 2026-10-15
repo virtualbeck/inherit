@@ -43,8 +43,7 @@ func TestWriteImportOverrides(t *testing.T) {
 	if !strings.Contains(netStr, "lifecycle {") || !strings.Contains(netStr, "ignore_changes = all") {
 		t.Errorf("override missing lifecycle/ignore_changes:\n%s", netStr)
 	}
-	// ignore_changes = all must be a bare identifier, not a quoted string --
-	// quoting it changes its meaning entirely (a literal attribute named "all").
+	// quoted "all" would mean an attribute named all
 	if strings.Contains(netStr, `ignore_changes = "all"`) {
 		t.Errorf(`ignore_changes must be the bare identifier "all", not a quoted string:\n%s`, netStr)
 	}
@@ -63,13 +62,11 @@ func TestWriteImportOverrides(t *testing.T) {
 			t.Errorf("RemoveImportOverrides left %s behind", p)
 		}
 	}
-	// removing again (e.g. a defer after a failure that already cleaned up)
-	// must not panic or error
+	// removing twice is harmless
 	RemoveImportOverrides(paths)
 }
 
-// A for_each group's instances share one override block, and a write that
-// fails partway leaves no override behind (a stray one hides drift).
+// Groups share one block; failed writes leave nothing.
 func TestWriteImportOverridesDedupAndAtomic(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "modules", "network"), 0o755); err != nil {
@@ -87,8 +84,7 @@ func TestWriteImportOverridesDedupAndAtomic(t *testing.T) {
 		t.Errorf("want 1 override block for the for_each group, got %d:\n%s", n, got)
 	}
 
-	// "zzz" sorts after "network" and has no module directory, so its write
-	// fails after network's succeeded.
+	// zzz has no module directory, so it fails
 	imports = append(imports, ImportSpec{Addr: "module.zzz.aws_vpc.main", Cat: "zzz", TFType: "aws_vpc", Name: "main"})
 	paths, err := WriteImportOverrides(dir, imports)
 	if err == nil {

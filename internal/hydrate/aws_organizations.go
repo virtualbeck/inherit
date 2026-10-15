@@ -23,8 +23,7 @@ func hydrateOrgUnit(ctx context.Context, c *Clients, r model.Resource) (map[stri
 	}
 	ou := out.OrganizationalUnit
 	cfg := map[string]any{"name": aws.ToString(ou.Name)}
-	// parent_id has no Read equivalent on the OU object itself -- a
-	// separate ListParents call against this OU's own ID.
+	// parent_id needs ListParents
 	if p, perr := organizations.NewFromConfig(c.Cfg(r.Region)).ListParents(ctx, &organizations.ListParentsInput{ChildId: &id}); perr == nil && len(p.Parents) > 0 {
 		if v := aws.ToString(p.Parents[0].Id); v != "" {
 			cfg["parent_id"] = v
@@ -40,10 +39,7 @@ func hydrateOrgPolicy(ctx context.Context, c *Clients, r model.Resource) (map[st
 		return nil, err
 	}
 	ps := out.Policy.PolicySummary
-	// an AWS-managed policy (e.g. the default FullAWSAccess SCP) can't be
-	// created/managed by Terraform -- same exclusion precedent as
-	// AWS-managed KMS keys and service-linked IAM roles elsewhere in this
-	// package.
+	// AWS-managed policies aren't manageable
 	if ps.AwsManaged {
 		return nil, fmt.Errorf("AWS-managed organizations policy")
 	}
@@ -77,10 +73,7 @@ func hydrateOrgAccount(ctx context.Context, c *Clients, r model.Resource) (map[s
 	return cfg, nil
 }
 
-// lastPathSegment returns the trailing "/"-delimited segment of an
-// Organizations resource ID -- ARN resources here are "o-.../ou-..." or
-// "o-.../account-id" or "o-.../policy-type/p-...", but the Describe* calls
-// all just want the final ID, not the whole org-scoped path.
+// lastPathSegment returns an Organizations ID's final segment.
 func lastPathSegment(id string) string {
 	if i := lastSlash(id); i >= 0 {
 		return id[i+1:]

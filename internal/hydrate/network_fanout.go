@@ -12,8 +12,6 @@ func init() {
 	registerFanout("aws_route_table", fanoutRouteTableAssoc)
 }
 
-// fanoutRouteTableAssoc emits an aws_route_table_association per explicit
-// subnet / gateway association of a route table.
 func fanoutRouteTableAssoc(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	out, err := ec2.NewFromConfig(c.Cfg(parent.Region)).DescribeRouteTables(ctx, &ec2.DescribeRouteTablesInput{
 		RouteTableIds: []string{parent.ID},

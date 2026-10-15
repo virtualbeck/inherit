@@ -14,10 +14,7 @@ func init() {
 	registerFanout("aws_s3_bucket", fanoutS3)
 }
 
-// fanoutS3 emits the aws_s3_bucket_* sub-resources the provider models
-// separately (versioning, encryption, public access block, policy, ownership).
-// Each GetBucket* call fails cleanly when that feature isn't configured; those
-// are skipped. All import with the bucket name.
+// Bucket sub-resources; unconfigured features are skipped.
 func fanoutS3(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	bucket := parent.ID
 	region := bucketRegion(ctx, c, bucket)
@@ -215,13 +212,7 @@ func fanoutS3(ctx context.Context, c *Clients, parent model.Resource) ([]model.R
 		if len(lambdas) > 0 {
 			ncfg["lambda_function"] = lambdas
 		}
-		// EventBridgeConfiguration's mere presence (a bare, empty struct
-		// when enabled -- it carries no fields of its own) means
-		// eventbridge notifications are on; nil means off. Confirmed as a
-		// real gap by a live account: another feature (GuardDuty's Malware
-		// Protection plan) had turned this on for the same bucket, and a
-		// generated config missing it showed a perpetual
-		// eventbridge=true->false diff on every plan.
+		// presence alone means enabled
 		if n.EventBridgeConfiguration != nil {
 			ncfg["eventbridge"] = true
 		}
@@ -251,9 +242,7 @@ func fanoutS3(ctx context.Context, c *Clients, parent model.Resource) ([]model.R
 				if v := string(r.Destination.StorageClass); v != "" {
 					d["storage_class"] = v
 				}
-				// cross-account replication: the destination bucket owner's
-				// account id, only present when access_control_translation
-				// is also in play (a same-account destination never sets it).
+				// cross-account destinations only
 				if v := aws.ToString(r.Destination.Account); v != "" {
 					d["account"] = v
 				}
@@ -286,10 +275,7 @@ func fanoutS3(ctx context.Context, c *Clients, parent model.Resource) ([]model.R
 					"status": string(r.DeleteMarkerReplication.Status),
 				}
 			}
-			// SourceSelectionCriteria is required by the provider whenever a
-			// destination.encryption_configuration is set (replicating
-			// KMS-encrypted source objects needs sse_kms_encrypted_objects
-			// explicitly enabled).
+			// required whenever destination encryption is set
 			if ssc := r.SourceSelectionCriteria; ssc != nil {
 				sm := map[string]any{}
 				if sk := ssc.SseKmsEncryptedObjects; sk != nil {
@@ -378,10 +364,7 @@ func fanoutS3(ctx context.Context, c *Clients, parent model.Resource) ([]model.R
 	return kids, nil
 }
 
-// s3TieringFilter flattens an intelligent-tiering filter into the schema's
-// flat prefix+tags shape. The schema's filter{} has no nested and{} -- it's
-// just a flat prefix+tags, same as the SDK's single-predicate fields -- so
-// an And-operator's prefix/tags are merged straight in rather than dropped.
+// The schema filter is flat; merge And predicates.
 func s3TieringFilter(f *s3types.IntelligentTieringFilter) map[string]any {
 	if f == nil {
 		return nil
@@ -408,12 +391,7 @@ func s3TieringFilter(f *s3types.IntelligentTieringFilter) map[string]any {
 	return fm
 }
 
-// s3ACLConfig always builds the full access_control_policy{} form (owner +
-// grants), never the canned "acl" string: GetBucketAcl's response can't be
-// reverse-engineered into a canned ACL name, and access_control_policy is
-// what the provider's own Read returns verbatim, so it's the only form
-// guaranteed to match state exactly. Returns nil when the bucket has no
-// grants at all (nothing recoverable).
+// Full policy form; a canned ACL isn't recoverable.
 func s3ACLConfig(owner *s3types.Owner, grants []s3types.Grant) map[string]any {
 	if owner == nil {
 		return nil
@@ -456,10 +434,6 @@ func s3ACLConfig(owner *s3types.Owner, grants []s3types.Grant) map[string]any {
 	}
 }
 
-// s3LifecycleFilter builds a lifecycle rule's filter{} block. The provider
-// accepts a bare prefix, a single tag, an and{} (multiple predicates
-// combined), and/or object-size bounds -- all independently recoverable
-// AWS-side conditions.
 func s3LifecycleFilter(f *s3types.LifecycleRuleFilter) map[string]any {
 	out := map[string]any{}
 	if f == nil {
@@ -500,8 +474,6 @@ func s3LifecycleFilter(f *s3types.LifecycleRuleFilter) map[string]any {
 	return out
 }
 
-// s3ReplicationFilter mirrors s3LifecycleFilter for replication rules: same
-// prefix/tag/and shape, a distinct SDK type with no object-size bounds.
 func s3ReplicationFilter(f *s3types.ReplicationRuleFilter) map[string]any {
 	out := map[string]any{}
 	if f == nil {

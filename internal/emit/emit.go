@@ -1,7 +1,4 @@
-// Package emit renders a hydrated inventory as OpenTofu/Terraform HCL. It is
-// driven by the provider schema (tfschema), so every value lands as an
-// argument, a map, or a nested block exactly as the provider expects. The
-// output is valid by construction and needs no `tofu fmt` afterwards.
+// Package emit renders an inventory as schema-driven HCL.
 package emit
 
 import (
@@ -24,39 +21,25 @@ import (
 	"github.com/zclconf/go-cty/cty"
 )
 
-// Options controls how Write lays out the generated project.
 type Options struct {
-	// Environment labels which environment this account represents (e.g.
-	// "dev"). internal/cli requires it on every real run (one account, one
-	// environment, 1:1) and lowercases it before it gets here; empty is
-	// only reachable through this package's own tests/direct API use, and
-	// falls back to a flat example state key. Doesn't affect the module
-	// tree or output directory at all -- only the example state key in the
-	// generated backend.tf.
+	// Environment only labels the example state key.
 	Environment string
 
-	// NoForEach disables §5.3 consolidation -- an escape hatch. By default
-	// runs of >= 3 structurally-identical resources of the same type are
-	// folded into a single `for_each` block over a `local` map rather than
-	// emitted as subnet_1 / subnet_2 / subnet_3.
+	// NoForEach disables for_each folding of identical resources.
 	NoForEach bool
 }
 
-// Result reports what was written.
 type Result struct {
 	Dir     string
 	Modules []string
 	Blocks  int
 	Imports []ImportSpec
-	Skipped int // hydrated resources with no schema
-	// Unmanaged counts resource attributes left under ignore_changes
-	// because they carried redacted secrets (see UNMANAGED_FIELDS.md).
+	Skipped int // no schema for the type
+	// Unmanaged counts attributes left to ignore_changes.
 	Unmanaged int
 }
 
-// ImportSpec is one `terraform import <addr> <id>` pair. Addr is
-// module-qualified (module.<category>.<type>.<name>); Cat/TFType/Name are
-// that same address's parts, kept structured rather than re-parsed from it.
+// ImportSpec is one import: address plus ID.
 type ImportSpec struct {
 	Addr   string
 	ID     string
@@ -65,10 +48,7 @@ type ImportSpec struct {
 	Name   string
 }
 
-// ResourceAddr is the module-qualified address tofu/terraform accept on the
-// command line (import, -target): module.<cat>.<type>.<name>, plus
-// ["<key>"] for a for_each instance. The key is quoted, so any character in
-// it survives.
+// ResourceAddr is the CLI address; keys are quoted.
 func ResourceAddr(cat, tfType, name, key string) string {
 	addr := "module." + cat + "." + tfType + "." + name
 	if key != "" {
@@ -82,48 +62,19 @@ type placed struct {
 	name string
 	cat  string
 
-	// set when this resource is folded into a for_each group (§5.3):
+	// for_each group membership:
 	grp     *fgroup
-	grpLead bool   // the one member that actually renders the block
-	grpKey  string // this member's for_each map key
+	grpLead bool // renders the shared block
+	grpKey  string
 }
 
-// refTarget is what an indexed literal value resolves to. key is non-empty
-// only when the target is a for_each group member -- then the traversal is
-// aws_x.name["key"].attr.
+// refTarget is what a literal resolves to.
 type refTarget struct{ cat, tfType, name, attr, key string }
 
-// freeformIDTypes are resource types whose provider-assigned ID is a
-// human-chosen string (a domain name) rather than an opaque AWS-generated
-// identifier -- indexing their bare ID as a reference target is unsafe: a
-// literal that merely happens to spell the same domain name in a
-// completely unrelated resource's own config (an ACM certificate's
-// domain_name, a Route53 record's name, a CloudFront distribution's
-// aliases, ...) gets silently rewired into a cross-resource/cross-module
-// reference it was never meant to be. Confirmed as a real, cycle-causing
-// bug: an aws_acm_certificate (module security) and an
-// aws_api_gateway_domain_name (module integration) configured with the
-// identical domain name -- the ordinary, expected way to use either of
-// them -- produced a real dependency cycle (integration legitimately
-// depends on security for the cert ARN; the coincidental domain-name
-// match then wired security right back to integration, a cycle neither
-// direction should exist). Every other resource type's ID in this
-// codebase is AWS-assigned and effectively unguessable, so this
-// collision risk is specific to "the ID IS the domain name" types, not a
-// general problem with ID-based reference matching.
+// Domain-name IDs; matching them causes cycles.
 var freeformIDTypes = map[string]bool{"aws_api_gateway_domain_name": true}
 
-// typeNoRefKeys is noRefKeys scoped to specific resource types, for fields
-// that are free-form everywhere else but only collide with another
-// resource's bare ID for this one type. Confirmed against a real account:
-// AWS auto-creates a Cloud Map namespace for ECS Service Connect using the
-// cluster's own ID as the namespace's "name" -- a plain display string on
-// aws_service_discovery_http_namespace, not a link back to the cluster.
-// The ECS cluster legitimately references the namespace by ARN
-// (service_connect_defaults.namespace); wiring this coincidental match the
-// other way as well produced a real dependency cycle between the two
-// modules. private_dns/public_dns namespaces share the same "name"
-// semantics and the same auto-creation path, so they're included too.
+// Per-type fields that coincidentally match IDs (cycles seen).
 var typeNoRefKeys = map[string]map[string]bool{
 	"aws_service_discovery_http_namespace":        {"name": true},
 	"aws_service_discovery_private_dns_namespace": {"name": true},
@@ -132,44 +83,33 @@ var typeNoRefKeys = map[string]map[string]bool{
 
 type outSpec struct {
 	trav hcl.Traversal
-	// rawExpr, when set, overrides trav: a `for` expression over a whole
-	// §5.3 for_each group (see wireValue's grouped-target branch), which
-	// hclwrite's traversal-only SetAttributeTraversal can't express.
+	// a for expression over a whole group
 	rawExpr string
 	desc    string
 }
 
-// inputSpec is one no-default module variable: either a cross-module wire
-// (wireValue) or an external reference the module can't resolve within this
-// scan (hoistExternalRefs) -- both are "the root must supply this", just
-// with a traversal vs. a literal on the root side.
+// inputSpec is a variable the root must supply.
 type inputSpec struct {
 	desc string
-	typ  string // "string" or "list(string)"
+	typ  string
 }
 
-// modBuild accumulates one module's files.
 type modBuild struct {
 	body   *hclwrite.File
-	outs   map[string]outSpec   // output name -> value + description
-	inputs map[string]inputSpec // no-default variable name -> declaration
-	vars   []hoistedVar         // hoisted scalars (with default)
+	outs   map[string]outSpec
+	inputs map[string]inputSpec
+	vars   []hoistedVar
 	data   dataUse
 	count  int
-	// externalRefValues tracks which raw value a bare external-ref variable
-	// name (e.g. "vpc_id") is already claimed for, so multiple resources
-	// needing the SAME foreign id/arn share one variable instead of each
-	// minting their own -- see hoistExternalRefs.
+	// Foreign value per variable name, so resources share.
 	externalRefValues map[string]any
-	varTaken          map[string]bool      // every variable name claimed in this module (hoisted + external-ref), for collision resolution
-	needsLambdaZip    bool                 // module has a zip lambda with no recoverable artifact
-	regionAliases     map[string]bool      // aliased "aws" provider configs (region != the root default) this module's resources use
-	locals            map[string]cty.Value // §5.3 for_each maps, name -> object keyed by instance key
+	varTaken          map[string]bool
+	needsLambdaZip    bool
+	regionAliases     map[string]bool
+	locals            map[string]cty.Value
 }
 
-// Write lays the hydrated inventory out as a root module that calls one module
-// per resource category. Literal ids/ARNs pointing at another resource become
-// references, wired through module inputs/outputs when they cross a category.
+// Write renders inv as root plus category modules.
 func Write(inv model.Inventory, outDir string, opt Options) (Result, error) {
 	sch, err := tfschema.Load()
 	if err != nil {
@@ -177,9 +117,9 @@ func Write(inv model.Inventory, outDir string, opt Options) (Result, error) {
 	}
 	res := Result{Dir: outDir}
 	defRegion := defaultRegion(inv)
-	usedRegions := map[string]string{} // alias -> region, across every module
+	usedRegions := map[string]string{}
 
-	// pass 1: emittable items, category, per-category unique names
+	// pass 1: items, categories, names
 	catNamers := map[string]*namer{}
 	var items []placed
 	for _, r := range inv.Resources {
@@ -201,8 +141,7 @@ func Write(inv model.Inventory, outDir string, opt Options) (Result, error) {
 		}
 		return items[i].r.ARN < items[j].r.ARN
 	})
-	// how many of each tf type land in each category -- drives the "sole of
-	// its type -> `main`" naming rung.
+	// Sole resource of its type is named main.
 	catTypeCount := map[string]map[string]int{}
 	for _, it := range items {
 		if catTypeCount[it.cat] == nil {
@@ -220,15 +159,10 @@ func Write(inv model.Inventory, outDir string, opt Options) (Result, error) {
 		items[i].name = nm.claim(items[i].r, sole)
 	}
 
-	// §5.3: fold runs of >= 3 structurally-identical same-type resources into
-	// one for_each block. Members keep their individual names for dedup
-	// bookkeeping but only the lead renders; the shared name is claimed
-	// through the same per-category namer so it can't collide.
+	// Fold runs of 3+ identical resources into for_each.
 	if !opt.NoForEach {
-		// localName dedup: a `locals {}` block is flat within a module,
-		// unlike a resource address (type-qualified) -- see fgroup.localName's
-		// doc for the real bug this guards against.
-		localNames := map[string]map[string]bool{} // cat -> claimed local names
+		// locals are flat per module, unlike resource addresses
+		localNames := map[string]map[string]bool{}
 		for _, g := range consolidate(items, catNamers) {
 			used := localNames[g.cat]
 			if used == nil {
@@ -255,18 +189,11 @@ func Write(inv model.Inventory, outDir string, opt Options) (Result, error) {
 		}
 	}
 
-	// tags identical on every taggable resource are safe to lift into the
-	// root provider's default_tags -- see commonTags' doc for why the
-	// criterion has to be this strict.
 	common := commonTags(items, sch)
 
-	// pass 2: value -> refTarget. Bare IDs are only unique within a region
-	// (e.g. two same-named SNS topics in different regions share an ID); an
-	// ambiguous ID must not become a reference target, or a literal that
-	// merely matches it gets wired to the wrong resource. ARNs already carry
-	// account+region, so they're never ambiguous.
+	// pass 2: index IDs; region-ambiguous IDs are skipped
 	idx := map[string]refTarget{}
-	idARN := map[string]string{} // ID -> the one ARN it's still unambiguously tied to
+	idARN := map[string]string{}
 	ambiguousID := map[string]bool{}
 	for _, it := range items {
 		name, key := it.name, ""
@@ -300,14 +227,13 @@ func Write(inv model.Inventory, outDir string, opt Options) (Result, error) {
 		}
 		return m
 	}
-	wires := map[string]map[string]string{}       // destCat -> varName -> "module.srcCat.out"
-	rootArgs := map[string]map[string]cty.Value{} // destCat -> varName -> literal value (external refs)
+	wires := map[string]map[string]string{}
+	rootArgs := map[string]map[string]cty.Value{}
 
-	// pass 3: render every resource into its module
+	// pass 3: render resources into modules
 	var unmanagedList []unmanaged
 	for _, it := range items {
-		// §5.3: only the group lead renders; every member still gets its own
-		// import block, handled in the imports pass below.
+		// only the group lead renders
 		if it.grp != nil && !it.grpLead {
 			continue
 		}
@@ -342,9 +268,7 @@ func Write(inv model.Inventory, outDir string, opt Options) (Result, error) {
 		cfg = scrubExternalIDs(cfg, m, name, it.cat, rootArgs)
 		cfg = stripCommonTags(cfg, common)
 
-		// aws_lambda_function / _layer_version must carry a code source. The
-		// artifact is not recoverable from the API, so point at a placeholder
-		// the module ships; the user swaps in the real build (or ignore_changes).
+		// Lambda code isn't recoverable; ship a placeholder zip.
 		if (it.r.TFType == "aws_lambda_function" || it.r.TFType == "aws_lambda_layer_version") &&
 			cfg != nil && !hasAny(cfg, "filename", "s3_bucket", "image_uri") {
 			cfg["filename"] = tmpl{parts: []any{
@@ -362,15 +286,7 @@ func Write(inv model.Inventory, outDir string, opt Options) (Result, error) {
 				hcl.TraverseAttr{Name: it.grp.localName},
 			})
 		}
-		// A resource outside the root provider's region needs an explicitly
-		// aliased "aws" provider instance pinned to its own region: the
-		// AWS provider's per-resource `region` attribute isn't consulted
-		// during the initial `ImportResourceState` call (only the provider's
-		// own configured region is, since no resource config exists yet at
-		// that point), so it silently 404s importing anything outside the
-		// default region even when `region` is set in the generated config.
-		// A provider alias is resolved statically, before any RPC, so it
-		// works for import as well as every ordinary read/write.
+		// Import ignores the per-resource region; alias the provider.
 		if it.r.Region != "" && it.r.Region != defRegion {
 			alias := sanitizeName(it.r.Region)
 			m.regionAliases[alias] = true
@@ -389,7 +305,6 @@ func Write(inv model.Inventory, outDir string, opt Options) (Result, error) {
 		res.Blocks++
 	}
 
-	// write module trees
 	cats := make([]string, 0, len(mods))
 	for c := range mods {
 		cats = append(cats, c)
@@ -441,7 +356,6 @@ func Write(inv model.Inventory, outDir string, opt Options) (Result, error) {
 		res.Modules = append(res.Modules, c)
 	}
 
-	// root: versions.tf, providers.tf, main.tf, imports.tf, backend.tf, README.md
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return res, err
 	}
@@ -510,63 +424,10 @@ func Write(inv model.Inventory, outDir string, opt Options) (Result, error) {
 	return res, nil
 }
 
-// noRefKeys are attribute names whose value must never be swapped for a
-// cross-resource reference, even when it textually matches another
-// resource's bare id or ARN:
-//
-//   - "dimensions" (map(string)): CloudWatch metric dimensions
-//     (aws_cloudwatch_metric_alarm.dimensions and its nested
-//     metric_query.metric.dimensions, aws_cloudwatch_log_metric_filter's
-//     metric_transformation.dimensions, aws_autoscalingplans_scaling_plan's
-//     customized_*_metric_specification.dimensions) are free-form
-//     name/value pairs defined by the metric itself, not by Terraform's
-//     resource graph.
-//   - "task_definition" (string, aws_ecs_service/aws_ecs_task_set): AWS's
-//     real API returns this in "family:revision" form, and a real
-//     service's Read stores exactly that -- not the task definition's ARN.
-//     Wiring it as a reference resolves through aws_ecs_task_definition's
-//     `id` (which IS the ARN, per that resource's own schema), producing a
-//     value that doesn't match what Read actually persists. Confirmed
-//     against a real account: the literal hydrated value is already
-//     correct as-is.
-//   - "name": a resource's own name is an identity LABEL, chosen
-//     independently by whoever created it -- never a pointer into
-//     Terraform's resource graph, even on the rare occasion its value
-//     happens to equal some other resource's bare id. Confirmed as a real,
-//     recurring collision class, not a one-off: typeNoRefKeys already
-//     carried a narrower version of this fix for Cloud Map namespaces
-//     (AWS auto-creates one using the ECS cluster's own id as the
-//     namespace's "name"); a second, unrelated case turned up in a real
-//     account's data on its own -- an aws_security_group named "tailnet",
-//     the same literal string as an aws_ecs_cluster's id, an ordinary
-//     naming coincidence with no AWS-level cause at all -- and got wired
-//     to that cluster's id instead of staying the security group's own
-//     literal name. Two independent real occurrences of "some resource's
-//     name coincidentally equals another resource's id" is exactly what
-//     "name" always risks, not particular to Cloud Map or ECS clusters;
-//     excluding it globally is the general fix, not another special case.
-//     A resource's OWN name is never how Terraform's graph is meant to be
-//     expressed (real cross-references use dedicated attributes -- vpc_id,
-//     cluster, security_group_id -- never "name"), so this closes the
-//     whole class rather than the next instance of it.
-//   - "tags" (map(string), every taggable resource): free-form user
-//     metadata, exactly like "dimensions" above, and exposed to the exact
-//     same collision as "name" -- confirmed in the SAME real account's
-//     data as the "name" case: the security group in question also
-//     carried a "Name" tag (the ordinary AWS convention of mirroring a
-//     resource's own name into its Name tag) whose value was ALSO
-//     "tailnet", and that -- a tag VALUE, not the resource's own "name"
-//     attribute -- wired to the same cluster id too, surviving the "name"
-//     fix untouched since it's a different key nested one level deeper.
-//     Tag keys/values are chosen independently by whoever tagged the
-//     resource, never a pointer into Terraform's graph, so the whole map
-//     is excluded rather than guessing which conventional tag key (Name,
-//     Environment, ...) might coincidentally collide next.
+// Never wired as references; each caused collisions.
 var noRefKeys = map[string]bool{"dimensions": true, "task_definition": true, "name": true, "tags": true}
 
-// wireValue walks a config value, turning literals that match another resource
-// into references. Same-category matches become direct traversals; cross-category
-// matches register a module output + input + root wire and become var refs.
+// wireValue turns literals that match resources into references.
 func wireValue(v any, selfCat, selfAddr string, idx map[string]refTarget, getmod func(string) *modBuild, wires map[string]map[string]string) any {
 	switch t := v.(type) {
 	case string:
@@ -578,16 +439,7 @@ func wireValue(v any, selfCat, selfAddr string, idx map[string]refTarget, getmod
 			return ref{keyedTraversal(tgt)}
 		}
 		if tgt.key != "" {
-			// §5.3 for_each group member, referenced from another category:
-			// share ONE output (a `for` map over the whole group, keyed the
-			// same way the group's own `local` already is) and one input
-			// across every member of this group that ends up wired, rather
-			// than minting a separate single-key output per referenced
-			// member. Confirmed against a real account: without this, three
-			// subnets in one for_each group produced three near-identical
-			// outputs (public_10_1_252_0_24_id, _253_, _254_), each a
-			// hardcoded single-key traversal -- exactly the duplication §5.3
-			// already collapses on the locals side.
+			// One output per group, not per member.
 			out := sanitizeName(tgt.name + "_" + tgt.attr + "s")
 			getmod(tgt.cat).outs[out] = outSpec{
 				rawExpr: fmt.Sprintf("{ for k, v in %s.%s : k => v.%s }", tgt.tfType, tgt.name, tgt.attr),
@@ -628,9 +480,6 @@ func wireValue(v any, selfCat, selfAddr string, idx map[string]refTarget, getmod
 		m := make(map[string]any, len(t))
 		for k, e := range t {
 			if noRefKeys[k] || typeNoRefKeys[selfType][k] {
-				// see noRefKeys' / typeNoRefKeys' doc: this key's value must
-				// stay exactly as hydrated, never swapped for a
-				// cross-resource reference.
 				m[k] = e
 				continue
 			}
@@ -778,8 +627,7 @@ func dataFile(u dataUse) *hclwrite.File {
 	}
 	sort.Strings(aliases)
 	for _, a := range aliases {
-		// pinned to the same aliased provider as the resources it parameterizes,
-		// or it would resolve via the module's default (unaliased) region instead.
+		// same alias as the resources it serves
 		add("aws_region", a, a)
 	}
 	if u.account {
@@ -791,9 +639,6 @@ func dataFile(u dataUse) *hclwrite.File {
 	return f
 }
 
-// versionsFile writes the root terraform{}/required_providers block, kept
-// separate from providersFile per the standard module layout (versions.tf:
-// version constraints; providers.tf: actual provider configuration).
 func versionsFile() *hclwrite.File {
 	f := hclwrite.NewEmptyFile()
 	tfBlock := f.Body().AppendNewBlock("terraform", nil).Body()
@@ -806,12 +651,7 @@ func versionsFile() *hclwrite.File {
 	return f
 }
 
-// providersFile writes the root provider blocks: the default (unaliased)
-// provider plus one aliased "aws" provider per non-default region actually
-// used by a generated resource (alias -> region). defaultTags, when
-// non-empty, is written as a default_tags block on every provider instance
-// (default_tags is a per-provider-config setting, so an aliased region's
-// provider needs its own copy to actually apply it).
+// default_tags is per provider; aliases repeat it.
 func providersFile(defRegion string, usedRegions map[string]string, defaultTags map[string]string) *hclwrite.File {
 	f := hclwrite.NewEmptyFile()
 	addDefaultTags := func(body *hclwrite.Body) {
@@ -846,15 +686,7 @@ func providersFile(defRegion string, usedRegions map[string]string, defaultTags 
 	return f
 }
 
-// commonTags returns the tag key/value pairs identical on every taggable
-// resource being emitted (schema has a "tags" attribute) -- the only set
-// safe to lift into the provider's default_tags without risking a plan
-// diff on any individual resource. default_tags applies unconditionally to
-// every taggable resource once set, with no per-resource opt-out; anything
-// short of "every single one already has this exact value" would add or
-// change a real resource's effective tags the moment it's introduced. A
-// taggable resource with no tags at all (or a different value) evicts the
-// key entirely, rather than being left out of consideration.
+// Only tags on every taggable resource qualify.
 func commonTags(items []placed, sch *tfschema.Schema) map[string]string {
 	var common map[string]string
 	first := true
@@ -878,12 +710,6 @@ func commonTags(items []placed, sch *tfschema.Schema) map[string]string {
 	return common
 }
 
-// stripCommonTags removes from a resource's own "tags" map any key already
-// hoisted into the provider's default_tags: default_tags merges into every
-// resource's effective tags automatically, so repeating an identical entry
-// in the resource itself is redundant. A resource with tag(s) beyond the
-// common set keeps just those; a resource whose tags are now empty drops
-// the attribute entirely rather than emitting `tags = {}`.
 func stripCommonTags(cfg map[string]any, common map[string]string) map[string]any {
 	if cfg == nil || len(common) == 0 {
 		return cfg
@@ -907,11 +733,7 @@ func stripCommonTags(cfg map[string]any, common map[string]string) map[string]an
 	return cfg
 }
 
-// moduleVersionsFile declares the aliased "aws" provider configs a module
-// requires from its caller (paired with the `providers = {...}` argument
-// rootMainFile adds to that module's block). Modules never configure a
-// provider themselves, only declare the requirement -- so this is always
-// versions.tf, never providers.tf.
+// Modules declare aliased providers; the root passes them.
 func moduleVersionsFile(m *modBuild) *hclwrite.File {
 	names := make([]string, 0, len(m.regionAliases))
 	for a := range m.regionAliases {
@@ -931,23 +753,16 @@ func moduleVersionsFile(m *modBuild) *hclwrite.File {
 	return f
 }
 
-// rawExprTokens parses a fragment of HCL as the right-hand side of an
-// assignment and returns its expression tokens, for constructs cty.Value
-// can't represent (bare traversals as object keys/values -- provider
-// references, `configuration_aliases`).
+// rawExprTokens parses HCL that cty.Value can't express.
 func rawExprTokens(src string) hclwrite.Tokens {
 	f, diags := hclwrite.ParseConfig([]byte("x = "+src), "generated.tf", hcl.InitialPos)
 	if diags.HasErrors() {
-		// src is always our own construction from sanitized identifiers; a
-		// parse failure here is a bug in the caller, not bad input data.
+		// our own input; failure is a bug
 		panic("rawExprTokens: " + diags.Error())
 	}
 	return f.Body().GetAttribute("x").Expr().BuildTokens(nil)
 }
 
-// writeBlock renders a config map into an hcl body per the schema block:
-// map-typed args as `k = {}`, nested block types as `k {}`, refs as bare
-// traversals, everything else as a plain attribute.
 func writeBlock(body *hclwrite.Body, cfg map[string]any, block *tfschema.Block) {
 	keys := make([]string, 0, len(cfg))
 	for k := range cfg {
@@ -958,7 +773,6 @@ func writeBlock(body *hclwrite.Body, cfg map[string]any, block *tfschema.Block) 
 	for _, k := range keys {
 		v := cfg[k]
 
-		// a nested block type: aws models it as `k { ... }` (repeatable)
 		if _, isRef := v.(ref); !isRef {
 			if bt, ok := block.NestedBlock(k); ok {
 				switch elems := v.(type) {
@@ -983,10 +797,7 @@ func writeBlock(body *hclwrite.Body, cfg map[string]any, block *tfschema.Block) 
 		if attr != nil {
 			typ = attr.Type
 		}
-		// Attributes the provider models as `set(object(...))` / `list(object(...))`
-		// (SDKv2 ConfigMode "attr" blocks, e.g. aws_route_table.route) reject a
-		// partial object literal: every sub-attribute must be present. Pad the
-		// missing ones with null.
+		// Object attributes reject partial literals; pad with null.
 		if names := objectAttrNames(attr); names != nil {
 			v = padObjects(v, names)
 		}
@@ -996,14 +807,11 @@ func writeBlock(body *hclwrite.Body, cfg map[string]any, block *tfschema.Block) 
 	}
 }
 
-// nullTok renders as the bare keyword `null`.
 type nullTok struct{}
 
-// lambdaPlaceholderZip is the stand-in deployment artifact shipped in any module
-// that has a zip-package lambda (the real artifact is not recoverable from AWS).
 const lambdaPlaceholderZip = "lambda_placeholder.zip"
 
-// emptyZip is a valid empty ZIP archive (end-of-central-directory record only).
+// end-of-central-directory record only
 var emptyZip = []byte{
 	0x50, 0x4b, 0x05, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 }
@@ -1017,8 +825,6 @@ func hasAny(m map[string]any, keys ...string) bool {
 	return false
 }
 
-// objectAttrNames returns the attribute names of the object an attribute is a
-// collection of (or a single nested object of), or nil if it isn't one.
 func objectAttrNames(a *tfschema.Attribute) []string {
 	if a == nil {
 		return nil
@@ -1048,7 +854,6 @@ func keysOf[V any](m map[string]V) []string {
 	return out
 }
 
-// padObjects fills every name not already set in each object with null.
 func padObjects(v any, names []string) any {
 	pad := func(m map[string]any) map[string]any {
 		for _, n := range names {
@@ -1072,8 +877,6 @@ func padObjects(v any, names []string) any {
 	return v
 }
 
-// valueTokens renders a config value (including refs at any depth) as HCL
-// expression tokens. Returns nil for empty values.
 func valueTokens(v any, t *tfschema.Type) hclwrite.Tokens {
 	switch x := v.(type) {
 	case ref:
@@ -1085,8 +888,7 @@ func valueTokens(v any, t *tfschema.Type) hclwrite.Tokens {
 	case nil:
 		return nil
 	case string:
-		// empty strings that reach here were set deliberately by a hydrator
-		// (hydrate.Generic already prunes empties); emit them.
+		// set deliberately by a hydrator
 		return hclwrite.TokensForValue(cty.StringVal(x))
 	case bool:
 		return hclwrite.TokensForValue(cty.BoolVal(x))
@@ -1168,9 +970,7 @@ func valueTokens(v any, t *tfschema.Type) hclwrite.Tokens {
 	}
 }
 
-// templateTokens renders a tmpl as a quoted HCL template string with embedded
-// ${...} interpolations. hclwrite.TokensForValue would escape the ${, so this
-// hand-builds the token stream.
+// Hand-built: TokensForValue would escape the ${.
 func templateTokens(x tmpl) hclwrite.Tokens {
 	quotedLit := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`, "${", "$${", "%{", "%%{")
 	toks := hclwrite.Tokens{{Type: hclsyntax.TokenOQuote, Bytes: []byte(`"`)}}
@@ -1218,10 +1018,7 @@ func defaultRegion(inv model.Inventory) string {
 	return best
 }
 
-// --- references -------------------------------------------------------
-
-// ref is a config value that should render as a bare HCL traversal
-// (aws_vpc.main.id) rather than a quoted string.
+// ref renders as a bare traversal.
 type ref struct{ trav hcl.Traversal }
 
 func rootName(t hcl.Traversal) string {
@@ -1233,13 +1030,7 @@ func rootName(t hcl.Traversal) string {
 	return root.Name + "." + attr.Name
 }
 
-// --- import ids ------------------------------------------------------
-
-// importID returns the value `terraform import <addr> <id>` expects.
-// idRefAttr is the attribute other resources use to reference this one by its
-// discovered ID. Usually "id", but a few resources expose that value under a
-// different name (e.g. aws_db_instance.id is the DBI resource id, while other
-// resources reference the instance by its identifier).
+// idRefAttr is the attribute exposing this ID.
 func idRefAttr(tfType string) string {
 	switch tfType {
 	case "aws_db_instance":
@@ -1249,22 +1040,7 @@ func idRefAttr(tfType string) string {
 	}
 }
 
-// noImportTypes are real, fully-configurable resource types the provider
-// itself has never wired an Importer for at all (no classic
-// schema.ResourceImporter, no newer @ArnIdentity/@IdentityAttribute
-// passthrough) -- `terraform import`/`--fast-import` fails outright for
-// any resource of these types with "doesn't support import", confirmed
-// against a real account rather than assumed, and by reading the real
-// provider source (neither guardduty/detector_feature.go nor
-// guardduty/organization_configuration_feature.go declares an Importer).
-// This is a genuine, structural provider limitation, not a hydrator bug:
-// the resource's config is still emitted normally (correctly describing
-// the real, already-enabled feature state), just without a matching
-// import{} block -- so `tofu apply` on a fresh project creates/re-PUTs
-// this specific resource once (a safe, idempotent PutXFeature call that
-// converges to the same state already in place, not a destructive
-// create) rather than adopting existing state the way every other
-// resource in the project does.
+// Types the provider can't import.
 var noImportTypes = map[string]bool{
 	"aws_guardduty_detector_feature":                   true,
 	"aws_guardduty_organization_configuration_feature": true,
@@ -1284,19 +1060,7 @@ func importID(r model.Resource) string {
 		"aws_secretsmanager_secret", "aws_lb", "aws_lb_target_group",
 		"aws_lb_listener", "aws_acm_certificate", "aws_ecs_task_definition",
 		"aws_sfn_activity", "aws_sfn_state_machine", "aws_lambda_code_signing_config":
-		// the bare ID (the ARN's trailing segment(s), or for a cert just the
-		// UUID) isn't a valid import id on its own for these types -- the
-		// provider's own import logic parses it as an ARN and fails loudly
-		// ("could not parse import ID ... as ARN") otherwise, confirmed
-		// against a real account. aws_ecs_task_definition is the odd one
-		// out here: r.ID ("family:revision") is the documented *legacy*
-		// import format and looks completely valid, but the provider
-		// changed this resource's import id to require the full ARN in a
-		// later version -- with no fallback, so the bare family:revision
-		// string hits the same "arn: invalid prefix" failure as the
-		// others, just with zero diagnostic context since it fails deep
-		// inside the provider's own ARN-detection path rather than a
-		// user-facing validation.
+		// these import by full ARN
 		return r.ARN
 	case "aws_sqs_queue":
 		if r.Region != "" && r.Account != "" {
@@ -1304,43 +1068,31 @@ func importID(r model.Resource) string {
 		}
 		return ""
 	case "aws_cloudformation_stack":
-		// ARN id is "<name>/<uuid>"; the provider imports by name.
+		// id is <name>/<uuid>; imported by name
 		if n, _, ok := strings.Cut(r.ID, "/"); ok {
 			return n
 		}
 		return r.ID
 	case "aws_cloudformation_stack_set":
-		// ARN id is "<name>:<uuid>"; import is by name.
+		// id is <name>:<uuid>; imported by name
 		if n, _, ok := strings.Cut(r.ID, ":"); ok {
 			return n
 		}
 		return r.ID
 	case "aws_ssm_parameter":
-		// r.ID is the ARN's resource segment, which never carries a
-		// hierarchical parameter's real leading "/". hydrateSSMParameter
-		// already resolved and confirmed the true name (trying both forms
-		// against the live API) and put it in Config; prefer that over
-		// re-guessing here.
+		// the hydrator resolved the real leading-slash name
 		if name, ok := r.Config["name"].(string); ok && name != "" {
 			return name
 		}
 		return r.ID
 	case "aws_key_pair":
-		// r.ID (from the ARN) is the key pair id (key-xxxx); the provider
-		// imports by key_name instead -- confirmed against a real account
-		// ("Cannot import non-existent remote object" using the bare id).
+		// imported by key_name, not key-id
 		if name, ok := r.Config["key_name"].(string); ok && name != "" {
 			return name
 		}
 		return r.ID
 	case "aws_service_discovery_private_dns_namespace":
-		// import id is "NAMESPACE_ID:VPC_ID" -- confirmed against a real
-		// account ("Unexpected format of ID ... expected NAMESPACE_ID:VPC_ID")
-		// and the real provider source's own Importer. hydrateSDNamespace
-		// already recovered the vpc (via the namespace's own Route53 zone,
-		// since Cloud Map's own API never reads it back) and put it in
-		// Config, so it's available here the same way aws_ssm_parameter's
-		// case above reuses its hydrator's own resolved name.
+		// import ID is NAMESPACE_ID:VPC_ID
 		if vpc, ok := r.Config["vpc"].(string); ok && vpc != "" {
 			return r.ID + ":" + vpc
 		}
@@ -1350,21 +1102,11 @@ func importID(r model.Resource) string {
 	}
 }
 
-// --- logical names ------------------------------------------------------
-
 var nameSanitize = regexp.MustCompile(`[^A-Za-z0-9_]+`)
 
-// maxLogicalName caps a resource's logical name. Anything longer is truncated
-// with a short hash suffix so it stays unique and legible.
 const maxLogicalName = 48
 
-// opaqueIDTypes are resource types whose AWS-assigned id carries no
-// human-chosen name at all -- unlike, say, an IAM role or Lambda function
-// whose id/ARN trailing segment IS its name (lastNameSegment recovers that),
-// these core EC2 networking primitives are only ever identified by a
-// system-generated id. When nothing better is available (no Name tag, no
-// heuristic, no descriptive `name` attribute) they get `<prefix>_<hash>` --
-// deterministic and stable, ugly but never misleading. Never `sg_01`.
+// IDs without a human name; hash fallback.
 var opaqueIDTypes = map[string]string{
 	"aws_vpc":                    "vpc",
 	"aws_subnet":                 "subnet",
@@ -1391,10 +1133,7 @@ type namer struct {
 
 func newNamer() *namer { return &namer{used: map[string]bool{}} }
 
-// claim resolves a resource's local name by walking a fixed ladder (see
-// rawName), then de-duplicates with a numeric suffix. Dedup is scoped per
-// (type, name) -- a Terraform address is <type>.<name>, so aws_vpc.main and
-// aws_subnet.main don't collide, and both can be "main".
+// claim names a resource, deduplicated per type.
 func (n *namer) claim(r model.Resource, sole bool) string {
 	base := sanitizeName(rawName(r, sole))
 	name := base
@@ -1405,16 +1144,12 @@ func (n *namer) claim(r model.Resource, sole bool) string {
 	return name
 }
 
-// rawName is the naming ladder: sole of its type -> a "Name" tag -> an
-// attribute/description heuristic -> a type-specific id extraction -> a
-// descriptive `name` attribute -> a deterministic hash (opaque-id types) or
-// the id's trailing segment.
+// rawName: sole, Name tag, heuristic, ID, name, hash.
 func rawName(r model.Resource, sole bool) string {
 	if sole {
 		return "main"
 	}
-	// A "Name" tag counts -- unless it's itself a lazy enumeration
-	// (sg-1, subnet_02, vpc 3), in which case a purpose heuristic beats it.
+	// A lazily enumerated Name tag loses to heuristics.
 	if v := r.Tags["Name"]; v != "" && !lazyEnumeration(v) {
 		return v
 	}
@@ -1422,7 +1157,7 @@ func rawName(r model.Resource, sole bool) string {
 		return h
 	}
 	if v := r.Tags["Name"]; v != "" {
-		return v // a lazy-enumeration tag, but nothing better turned up
+		return v
 	}
 	switch r.TFType {
 	case "aws_cloudformation_stack", "aws_resourceexplorer2_view": // id "<name>/<uuid>"
@@ -1445,15 +1180,11 @@ func rawName(r model.Resource, sole bool) string {
 	return lastNameSegment(r.ID)
 }
 
-// heuristicName infers a purpose-based name from a resource's own config for
-// the handful of types where that's both common and useful. Returns "" when
-// nothing matches. Deliberately small and conservative -- the LLM fallback
-// (spec §5.2) covers the long tail.
+// heuristicName guesses a purpose name; "" if none.
 func heuristicName(r model.Resource) string {
 	switch r.TFType {
 	case "aws_security_group":
-		// rules are separate resources in this project's output, so the
-		// signal is the SG's own name + description text.
+		// rules are separate resources; use the group's text
 		txt := strings.ToLower(cfgString(r.Config, "name") + " " + cfgString(r.Config, "description"))
 		switch {
 		case strings.Contains(txt, "https") || strings.Contains(txt, "443"):
@@ -1501,8 +1232,6 @@ func heuristicName(r model.Resource) string {
 	return ""
 }
 
-// wellKnownPorts maps a single TCP/UDP port to a short service label, so a
-// standalone SG rule reads as `ingress_https` rather than `sgr_0abc…`.
 var wellKnownPorts = map[int]string{
 	20: "ftp_data", 21: "ftp", 22: "ssh", 23: "telnet", 25: "smtp",
 	53: "dns", 80: "http", 111: "rpcbind", 123: "ntp", 161: "snmp",
@@ -1517,9 +1246,7 @@ var wellKnownPorts = map[int]string{
 	51820: "wireguard",
 }
 
-// sgRuleName derives a purpose name for a standalone security-group rule from
-// its direction, protocol and port(s): ingress_https, egress_all,
-// ingress_5000, ingress_8000_9000, ingress_icmp.
+// sgRuleName: e.g. ingress_https, egress_all, ingress_5000.
 func sgRuleName(r model.Resource) string {
 	dir := "ingress"
 	if r.TFType == "aws_vpc_security_group_egress_rule" {
@@ -1546,7 +1273,7 @@ func sgRuleName(r model.Resource) string {
 	return fmt.Sprintf("%s_%d_%d", dir, from, to)
 }
 
-// cfgInt reads a config number (JSON round-trips these as float64) as an int.
+// JSON numbers arrive as float64.
 func cfgInt(cfg map[string]any, key string) (int, bool) {
 	switch n := cfg[key].(type) {
 	case float64:
@@ -1564,15 +1291,11 @@ func cfgString(cfg map[string]any, key string) string {
 	return s
 }
 
-// lazyEnumerationRe matches names like "sg1", "sg-1", "subnet_02", "vpc 3" --
-// a short alpha prefix and a small number, i.e. someone counted instead of
-// naming.
+// Names like sg1, subnet_02: counted, not named.
 var lazyEnumerationRe = regexp.MustCompile(`(?i)^[a-z]{1,8}[-_ ]?\d{1,3}$`)
 
 func lazyEnumeration(s string) bool { return lazyEnumerationRe.MatchString(s) }
 
-// looksLikeAWSID reports whether s is a bare AWS resource id
-// (vpc-…, sg-…, subnet-…, rtb-…) rather than a human name.
 func looksLikeAWSID(s string) bool {
 	i := strings.IndexByte(s, '-')
 	if i <= 0 || i > 8 {
@@ -1611,14 +1334,7 @@ func iamTrustService(cfg map[string]any) string {
 	return ""
 }
 
-// lastNameSegment reduces an ARN / URL / path-style id to its trailing
-// human-meaningful part, e.g.
-//
-//	arn:aws:sns:us-west-1:123:aws-controltower-Notifications -> aws-controltower-Notifications
-//	arn:aws:iam::123:role/service-role/MyRole                -> MyRole
-//	https://sqs.us-west-1.amazonaws.com/123/my-queue         -> my-queue
-//
-// Plain ids (vpc-0abc, my-function) pass through untouched.
+// lastNameSegment returns an ID's last part.
 func lastNameSegment(id string) string {
 	s := id
 	if i := strings.LastIndexAny(s, "/"); i >= 0 && i < len(s)-1 {
@@ -1643,7 +1359,6 @@ func sanitizeName(raw string) string {
 	return base
 }
 
-// shortHash is a stable 8-hex-char digest, for disambiguating truncated names.
 func shortHash(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:])[:8]

@@ -1,5 +1,4 @@
-// Package awsx wraps AWS SDK config loading, a read-only request guard, and
-// account/region resolution. Nothing here mutates the target account.
+// Package awsx: AWS config behind a read-only guard.
 package awsx
 
 import (
@@ -16,21 +15,12 @@ import (
 	"github.com/aws/smithy-go/middleware"
 )
 
-// Load builds the shared AWS config from the standard environment/SSO/profile
-// chain and attaches the read-only guard to every client derived from it.
-// region, if set, pins the config's default region (individual clients still
-// override per-region during the sweep). profile, if set, pins which
-// ~/.aws/credentials or ~/.aws/config profile to use, overriding
-// AWS_PROFILE/the "default" profile the same way AWS_PROFILE would --
-// config.WithSharedConfigProfile is the SDK's own documented mechanism for
-// this, not a hand-rolled env var override.
+// Load builds the shared, read-only-guarded AWS config.
 func Load(ctx context.Context, region, profile string) (aws.Config, error) {
 	opts := []func(*config.LoadOptions) error{
 		config.WithAPIOptions([]func(*middleware.Stack) error{readOnlyGuard}),
 		config.WithHTTPClient(sharedHTTPClient()),
-		// A throttled call that runs out of retries is a resource silently
-		// missing from the scan (most fillers skip on error), so back off
-		// longer than the SDK's default 3 attempts. Reads are idempotent.
+		// Exhausted retries silently drop resources; retry longer.
 		config.WithRetryMaxAttempts(retryMaxAttempts),
 	}
 	if region != "" {
@@ -46,16 +36,9 @@ func Load(ctx context.Context, region, profile string) (aws.Config, error) {
 	return cfg, nil
 }
 
-// retryMaxAttempts is the SDK's per-call attempt budget (default 3).
 const retryMaxAttempts = 10
 
-// sharedHTTPClient is one connection pool for every service client derived
-// from the config. Left to the SDK, each NewFromConfig clones the transport
-// (a fresh pool), so every call paid a new TCP + TLS handshake: several round
-// trips to a distant region before the request even goes out. Frozen, so
-// service clients use it as-is instead of cloning it. The read timeout is
-// the SDK's own planned default (it ships disabled), so a stalled connection
-// can't hang a scan.
+// One shared pool; the SDK clones per client.
 func sharedHTTPClient() aws.HTTPClient {
 	return awshttp.NewBuildableClient().
 		WithTransportOptions(func(t *http.Transport) { t.MaxIdleConnsPerHost = 64 }).
@@ -63,17 +46,15 @@ func sharedHTTPClient() aws.HTTPClient {
 		Freeze()
 }
 
-// Identity is the resolved caller, from sts:GetCallerIdentity.
 type Identity struct {
 	Account   string
 	ARN       string
 	UserID    string
 	Partition string
-	Region    string // the config's resolved region
+	Region    string
 }
 
-// ResolveIdentity calls sts:GetCallerIdentity. It is the only "who am I" check
-// inherit performs and it never gates execution.
+// ResolveIdentity calls sts:GetCallerIdentity; it never gates.
 func ResolveIdentity(ctx context.Context, cfg aws.Config) (Identity, error) {
 	out, err := sts.NewFromConfig(cfg).GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	if err != nil {

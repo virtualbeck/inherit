@@ -13,20 +13,14 @@ func init() {
 	registerFanout("aws_ec2_transit_gateway_route_table", fanoutTGWRouteTable)
 }
 
-// fanoutTGWRouteTable expands a transit gateway route table into its static
-// routes, associations, and propagations -- each a separate top-level
-// resource in the provider.
+// Static routes, associations and propagations.
 func fanoutTGWRouteTable(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	cl := ec2.NewFromConfig(c.Cfg(parent.Region))
 	rtID := parent.ID
 
 	var kids []model.Resource
 
-	// aws_ec2_transit_gateway_route only manages *static* routes -- routes
-	// learned via BGP/attachment propagation aren't declarable through it at
-	// all (the resource's schema has no "type" attribute), so propagated
-	// ones must be filtered out here rather than left for the schema to
-	// reject at plan time.
+	// static routes only; propagated ones aren't declarable
 	var routeToken *string
 	for {
 		out, err := cl.SearchTransitGatewayRoutes(ctx, &ec2.SearchTransitGatewayRoutesInput{

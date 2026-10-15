@@ -7,11 +7,7 @@ import (
 	mwaatypes "github.com/aws/aws-sdk-go-v2/service/mwaa/types"
 )
 
-// Generic() maps the whole GetEnvironment response onto the schema cleanly
-// by field name. airflow_configuration_options is the one deliberate
-// exception -- it can carry real secrets (DB connection strings, etc.), so
-// it's stripped after Generic() rather than ever written into generated
-// config.
+// airflow_configuration_options must never reach config.
 func TestMWAAEnvironmentConfigDropsSensitiveOptions(t *testing.T) {
 	sch, err := schemaFor("aws_mwaa_environment")
 	if err != nil {

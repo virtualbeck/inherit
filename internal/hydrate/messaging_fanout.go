@@ -21,12 +21,7 @@ func init() {
 }
 
 func fanoutEventTargets(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
-	// parent.ID is "rule-name" on the default bus, but SplitResource only
-	// splits on the FIRST '/' of the ARN's resource segment
-	// ("rule/bus-name/rule-name"), so a custom-bus rule's ID actually
-	// arrives as "bus-name/rule-name" -- passing that whole string as
-	// ListTargetsByRule's bare Rule name (with no EventBusName) looks up the
-	// wrong rule on the default bus entirely and returns nothing.
+	// custom-bus rule IDs arrive as bus/rule
 	ruleName, busName := parent.ID, ""
 	if i := strings.LastIndexByte(parent.ID, '/'); i >= 0 {
 		busName, ruleName = parent.ID[:i], parent.ID[i+1:]
@@ -102,8 +97,6 @@ func fanoutEventTargets(ctx context.Context, c *Clients, parent model.Resource) 
 	return kids, nil
 }
 
-// ecsTargetConfig renders EcsParameters as ecs_target{}. Tags/ReferenceId
-// have no schema counterpart on this resource and are dropped.
 func ecsTargetConfig(ep *ebrtypes.EcsParameters) map[string]any {
 	m := map[string]any{"task_definition_arn": aws.ToString(ep.TaskDefinitionArn)}
 	if v := string(ep.LaunchType); v != "" {
@@ -201,10 +194,7 @@ func fanoutSNSSubscriptions(ctx context.Context, c *Clients, parent model.Resour
 		if attrs, err := cl.GetSubscriptionAttributes(ctx, &sns.GetSubscriptionAttributesInput{SubscriptionArn: &arn}); err == nil {
 			maps.Copy(cfg, attrsToConfig(attrs.Attributes, sch))
 		}
-		// confirmation_timeout_in_minutes / endpoint_auto_confirms are pure
-		// provider directives for the (already-past) subscribe call; AWS has
-		// no such attributes to read back. Pin them to the provider defaults
-		// so the plan doesn't offer to "add" them.
+		// directives with no AWS value; pin defaults
 		if _, ok := cfg["confirmation_timeout_in_minutes"]; !ok {
 			cfg["confirmation_timeout_in_minutes"] = float64(1)
 		}
@@ -246,8 +236,6 @@ func fanoutSQSPolicy(ctx context.Context, c *Clients, parent model.Resource) ([]
 	}}, nil
 }
 
-// fanoutSNSPolicy turns a topic's access policy into an aws_sns_topic_policy.
-// Called from fanoutSNSSubscriptions.
 func fanoutSNSPolicy(ctx context.Context, cl *sns.Client, parent model.Resource) []model.Resource {
 	arn := parent.ARN
 	out, err := cl.GetTopicAttributes(ctx, &sns.GetTopicAttributesInput{TopicArn: &arn})

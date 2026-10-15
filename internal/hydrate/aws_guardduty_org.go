@@ -15,12 +15,7 @@ func init() {
 	registerGapFiller(gapFillGuardDutyMalwareProtectionPlans)
 }
 
-// gapFillGuardDutyOrganizationAdminAccounts discovers which account (if
-// any) is delegated as this organization's GuardDuty administrator --
-// account-wide (not per-region despite ListOrganizationAdminAccounts being
-// called per region historically; a real per-region gap-filler would
-// duplicate the one real global delegation N times, same reasoning as the
-// IAM gap-filler), no ARN/tagging concept.
+// Global delegation; runs once, not per region.
 func gapFillGuardDutyOrganizationAdminAccounts(ctx context.Context, c *Clients, _ string) ([]model.Resource, error) {
 	cl := guardduty.NewFromConfig(c.Cfg(""))
 	var out []model.Resource
@@ -77,12 +72,7 @@ func hydrateGuardDutyMalwareProtectionPlan(ctx context.Context, c *Clients, r mo
 	return cfg, nil
 }
 
-// gapFillGuardDutyMalwareProtectionPlans discovers standalone Malware
-// Protection plans (S3-bucket malware scanning, independent of any
-// GuardDuty detector) -- ListMalwareProtectionPlans is region-scoped, no
-// tagging concept for the standalone tagging-API sweep to use even though
-// the resource itself supports tags (its ARN doesn't map to a convenient
-// discovery path here), so gap-filled directly instead.
+// Standalone malware plans; no discovery path otherwise.
 func gapFillGuardDutyMalwareProtectionPlans(ctx context.Context, c *Clients, region string) ([]model.Resource, error) {
 	cl := guardduty.NewFromConfig(c.Cfg(region))
 	var out []model.Resource

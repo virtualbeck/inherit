@@ -13,22 +13,16 @@ import (
 	"github.com/virtualbeck/inherit/tfschema"
 )
 
-// Hydrator fetches the full configuration of one resource and returns it as a
-// Terraform-attribute-shaped map. It must only call read-only APIs.
+// Hydrator returns one resource's config; read-only calls.
 type Hydrator func(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error)
 
 var registry = map[string]Hydrator{}
 
-// RegionResolver looks up the real region for a resource whose ARN carries
-// none (S3 buckets: `arn:aws:s3:::bucket`, no region segment) so the emitter
-// can pin it to the right aliased provider instead of silently defaulting to
-// the module's default region.
+// RegionResolver finds the region for region-less ARNs.
 type RegionResolver func(ctx context.Context, c *Clients, r model.Resource) (string, error)
 
 var regionResolvers = map[string]RegionResolver{}
 
-// registerRegionResolver wires a region resolver to a Terraform resource
-// type whose discovered ARN doesn't carry a region.
 func registerRegionResolver(tfType string, f RegionResolver) {
 	if _, dup := regionResolvers[tfType]; dup {
 		panic("hydrate: duplicate region resolver for " + tfType)
@@ -36,17 +30,9 @@ func registerRegionResolver(tfType string, f RegionResolver) {
 	regionResolvers[tfType] = f
 }
 
-// retypeSentinel is a reserved Config key a Hydrator may set to redirect its
-// resource to a different Terraform type once hydration reveals something
-// ResolveTFType's ARN-only classification couldn't have known -- e.g. a
-// network ACL that turns out to be a VPC's default one, which the provider
-// insists on importing as aws_default_network_acl, not aws_network_acl, and
-// rejects outright otherwise. Run() pops it and reassigns r.TFType before
-// treating the resource as hydrated.
+// Config key a hydrator sets to change type.
 const retypeSentinel = "__inherit_retype_as"
 
-// register wires a hydrator to a Terraform resource type. Called from init() in
-// the per-service files.
 func register(tfType string, h Hydrator) {
 	if _, dup := registry[tfType]; dup {
 		panic("hydrate: duplicate hydrator for " + tfType)
@@ -54,15 +40,7 @@ func register(tfType string, h Hydrator) {
 	registry[tfType] = h
 }
 
-// hydrateRegistered runs tfType's already-registered hydrator and applies
-// retypeSentinel if the hydrator sets one, returning the resource's final
-// type alongside its config. Gap-fillers need this (not a bare
-// registry[tfType] lookup) because they run outside Run()'s own per-resource
-// loop -- the only other place retypeSentinel is handled -- so calling the
-// hydrator directly would silently leave a retyping hydrator's sentinel key
-// sitting unprocessed in cfg and the resource's TFType never updated (e.g.
-// gapFillDefaultNetwork's aws_vpc entries would keep emitting as plain
-// aws_vpc despite hydrateVPC's own default-VPC retype firing correctly).
+// Gap-fillers bypass Run, so apply retypeSentinel here.
 func hydrateRegistered(ctx context.Context, c *Clients, r model.Resource) (cfg map[string]any, finalType string, err error) {
 	h, ok := registry[r.TFType]
 	if !ok {
@@ -80,9 +58,7 @@ func hydrateRegistered(ctx context.Context, c *Clients, r model.Resource) (cfg m
 	return cfg, finalType, nil
 }
 
-// arnToTF maps (ARN service, ARN resource-type) to a Terraform resource type.
-// Discovery fills Resource.Service/Type from the ARN; this turns that into the
-// provider's type name.
+// (ARN service, ARN type) -> Terraform type.
 var arnToTF = map[[2]string]string{
 	{"ec2", "vpc"}:                                   "aws_vpc",
 	{"ec2", "subnet"}:                                "aws_subnet",
@@ -128,9 +104,7 @@ var arnToTF = map[[2]string]string{
 	{"route53resolver", "firewall-domain-list"}:      "aws_route53_resolver_firewall_domain_list",
 	{"route53resolver", "resolver-query-log-config"}: "aws_route53_resolver_query_log_config",
 	{"datasync", "task"}:                             "aws_datasync_task",
-	// every DataSync location type shares this one ARN resource segment;
-	// hydrateDataSyncLocation determines the real type from ListLocations'
-	// own LocationUri and retypes accordingly.
+	// shared ARN segment; the hydrator retypes by URI
 	{"datasync", "location"}:     "aws_datasync_location_s3",
 	{"datasync", "agent"}:        "aws_datasync_agent",
 	{"directconnect", "dxcon"}:   "aws_dx_connection",
@@ -139,10 +113,7 @@ var arnToTF = map[[2]string]string{
 	{"organizations", "policy"}:  "aws_organizations_policy",
 	{"organizations", "account"}: "aws_organizations_account",
 	{"rds", "pg"}:                "aws_db_parameter_group",
-	// Neptune cluster parameter groups share this exact ARN segment
-	// (rds:cluster-pg:name) with RDS/Aurora -- hydrateRDSClusterParamGroup
-	// tries RDS first and falls back to Neptune + retypeSentinel on a
-	// DBClusterParameterGroupNotFoundFault.
+	// Neptune shares this segment; hydrator falls back
 	{"rds", "cluster-pg"}:                          "aws_rds_cluster_parameter_group",
 	{"redshift", "parametergroup"}:                 "aws_redshift_parameter_group",
 	{"redshift", "subnetgroup"}:                    "aws_redshift_subnet_group",
@@ -237,13 +208,7 @@ var arnToTF = map[[2]string]string{
 	{"apigateway", "apikeys"}:                      "aws_api_gateway_api_key",
 	{"apigateway", "usageplans"}:                   "aws_api_gateway_usage_plan",
 	{"apigateway", "clientcertificates"}:           "aws_api_gateway_client_certificate",
-	// vpclinks/domainnames: v1 REST API and v2 HTTP API both use these same
-	// ARN resource segments for what may be the identical underlying AWS
-	// object (a custom domain name in particular is shared across REST and
-	// HTTP APIs via separate mapping resources). Only aws_api_gateway_*
-	// (v1) is implemented so far -- adding aws_apigatewayv2_vpc_link/
-	// domain_name later needs the same "pick one, don't double-emit"
-	// judgment call already made for SES v1/v2 and IAM group membership.
+	// v1 only; v2 shares these segments
 	{"apigateway", "vpclinks"}:         "aws_api_gateway_vpc_link",
 	{"apigateway", "domainnames"}:      "aws_api_gateway_domain_name",
 	{"kinesis", "stream"}:              "aws_kinesis_stream",
@@ -290,11 +255,9 @@ var arnToTF = map[[2]string]string{
 	{"elasticache", "usergroup"}:       "aws_elasticache_user_group",
 }
 
-// ResolveTFType returns the Terraform type for a discovered resource, or "".
 func ResolveTFType(r model.Resource) string {
 	if r.Service == "wafv2" {
-		// ARN resource is "<scope>/<kind>/<name>/<id>"; Type holds the scope,
-		// so the kind is the first segment of the id.
+		// <scope>/<kind>/<name>/<id>: kind leads the ID
 		kind, _, _ := strings.Cut(r.ID, "/")
 		switch kind {
 		case "webacl":
@@ -310,7 +273,6 @@ func ResolveTFType(r model.Resource) string {
 	return arnToTF[[2]string{r.Service, r.Type}]
 }
 
-// Stats summarises a hydration run.
 type Stats struct {
 	Hydrated   int
 	NoHydrator map[string]int // tf type -> count (mapped but no hydrator yet)
@@ -318,14 +280,12 @@ type Stats struct {
 	Errors     []error
 }
 
-// Options controls a hydration run.
 type Options struct {
 	Concurrency int
 	OnProgress  func(done, total int)
 }
 
-// Run fills r.TFType for every resolvable resource and r.Config for every one
-// with a registered hydrator, concurrently.
+// Run resolves types and hydrates configs, concurrently.
 func Run(ctx context.Context, cfg aws.Config, inv *model.Inventory, opt Options) (Stats, error) {
 	if _, err := tfschema.Load(); err != nil { // fail fast if the embedded schema is broken
 		return Stats{}, err
@@ -337,8 +297,7 @@ func Run(ctx context.Context, cfg aws.Config, inv *model.Inventory, opt Options)
 
 	st := Stats{NoHydrator: map[string]int{}, Unmapped: map[string]int{}}
 
-	// gap-fillers discover + hydrate resource types the tagging API can't see
-	// (application auto scaling, ...); they arrive with TFType and Config set.
+	// gap-filled resources arrive with Config set
 	st.Errors = append(st.Errors, runGapFillers(ctx, clients, inv, gapFillConcurrency)...)
 
 	type job struct {
@@ -399,8 +358,7 @@ func Run(ctx context.Context, cfg aws.Config, inv *model.Inventory, opt Options)
 		r.Config = cfgMap
 	})
 
-	// expand split resources (SG rules, ...) from the parents that hydrated,
-	// then recount so Hydrated reflects what will actually emit.
+	// fan out children, then recount
 	st.Errors = append(st.Errors, runFanout(ctx, clients, inv, opt.Concurrency)...)
 	st.Hydrated = 0
 	for _, r := range inv.Resources {
@@ -411,7 +369,6 @@ func Run(ctx context.Context, cfg aws.Config, inv *model.Inventory, opt Options)
 	return st, nil
 }
 
-// schemaFor is a hydrator helper: the schema block for a tf type, or an error.
 func schemaFor(tfType string) (*tfschema.Block, error) {
 	sch, err := tfschema.Load()
 	if err != nil {
@@ -424,7 +381,6 @@ func schemaFor(tfType string) (*tfschema.Block, error) {
 	return b, nil
 }
 
-// SortedCounts flattens a name->count map, count desc then name.
 func SortedCounts(m map[string]int) []model.TypeCount {
 	out := make([]model.TypeCount, 0, len(m))
 	for k, v := range m {

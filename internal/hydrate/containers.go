@@ -25,10 +25,7 @@ func init() {
 }
 
 func hydrateECSCluster(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
-	// DescribeClusters returns none of Settings/Configuration/
-	// ServiceConnectDefaults unless explicitly asked for via Include (per
-	// the SDK's own doc comment: "If this field is omitted, this
-	// information isn't included").
+	// these need explicit Include
 	out, err := ecs.NewFromConfig(c.Cfg(r.Region)).DescribeClusters(ctx, &ecs.DescribeClustersInput{
 		Clusters: []string{r.ID},
 		Include:  []ecstypes.ClusterField{ecstypes.ClusterFieldSettings, ecstypes.ClusterFieldConfigurations},
@@ -40,10 +37,7 @@ func hydrateECSCluster(ctx context.Context, c *Clients, r model.Resource) (map[s
 		return nil, fmt.Errorf("not found")
 	}
 	cl := out.Clusters[0]
-	// An INACTIVE cluster (deleted, but still returned by Describe and
-	// still visible to the tagging-API sweep for a while after) can't be
-	// imported -- same "discovered but not really there" shape as an
-	// ECS task definition's non-ACTIVE revisions.
+	// INACTIVE clusters can't be imported.
 	if aws.ToString(cl.Status) == "INACTIVE" {
 		return nil, fmt.Errorf("INACTIVE ECS cluster (deleted)")
 	}
@@ -109,21 +103,11 @@ func hydrateECSService(ctx context.Context, c *Clients, r model.Resource) (map[s
 		return nil, fmt.Errorf("not found")
 	}
 	s := out.Services[0]
-	// Same "discovered but deleted" shape as the INACTIVE cluster/KMS
-	// pending-deletion exclusions above: a deleted service still answers
-	// DescribeServices and stays visible to the tagging-API sweep for a
-	// while, but can't actually be imported.
+	// deleted services can't be imported
 	if aws.ToString(s.Status) == "INACTIVE" {
 		return nil, fmt.Errorf("INACTIVE ECS service (deleted)")
 	}
-	// DescribeServices' TaskDefinition can come back as either the bare
-	// "family:revision" or the full ARN (AWS echoes back whatever form the
-	// service was last created/updated with). The provider's own Read,
-	// though, always normalizes to "family:revision" on a fresh import --
-	// d.Get("task_definition") is empty (no prior state), which its
-	// arn.IsARN check treats as "not an ARN", so it always strips down to
-	// family:revision the first time. Match that here so config lines up
-	// with what state will actually contain post-import.
+	// Read normalizes to family:revision on import
 	taskDef := aws.ToString(s.TaskDefinition)
 	if parts := strings.Split(taskDef, "/"); len(parts) == 2 && strings.HasPrefix(parts[0], "arn:") {
 		taskDef = parts[1]
@@ -178,10 +162,6 @@ func hydrateECSService(ctx context.Context, c *Clients, r model.Resource) (map[s
 	if len(lbs) > 0 {
 		cfg["load_balancer"] = lbs
 	}
-	// a service using a capacity provider strategy instead of launch_type
-	// (very common on Fargate) has nothing else recoverable describing how
-	// it actually schedules tasks, so capacity_provider_strategy below
-	// matters even though it's rarely the first field anyone thinks to check.
 	if v := aws.ToString(s.PlatformVersion); v != "" {
 		cfg["platform_version"] = v
 	}
@@ -259,8 +239,7 @@ func hydrateECSService(ctx context.Context, c *Clients, r model.Resource) (map[s
 		}
 		cfg["service_registries"] = srs
 	}
-	// ServiceConnectConfiguration isn't on the top-level Service object at
-	// all -- only on its currently active (PRIMARY) deployment.
+	// only on the PRIMARY deployment
 	for _, dep := range s.Deployments {
 		if aws.ToString(dep.Status) != "PRIMARY" || dep.ServiceConnectConfiguration == nil {
 			continue
@@ -284,14 +263,7 @@ func hydrateTaskDef(ctx context.Context, c *Clients, r model.Resource) (map[stri
 		return nil, err
 	}
 	td := out.TaskDefinition
-	// every deploy registers a new revision and deregisters the last one;
-	// DescribeTaskDefinition (and the tagging API sweep that discovers
-	// these in the first place) happily returns INACTIVE revisions, but
-	// the provider's import path treats anything but the current ACTIVE
-	// revision as a nonexistent remote object. Not worth managing a
-	// deregistered revision as IaC anyway, so drop it the same way
-	// hydrateKMSKey drops an AWS-managed key: an error here just excludes
-	// the resource from the output.
+	// Only the ACTIVE revision is importable.
 	if td.Status != ecstypes.TaskDefinitionStatusActive {
 		return nil, fmt.Errorf("task definition revision is %s, not the active one", td.Status)
 	}
@@ -364,13 +336,7 @@ func hydrateECSCapacityProvider(ctx context.Context, c *Clients, r model.Resourc
 		}
 		cfg["auto_scaling_group_provider"] = asg
 	}
-	// managed_instances_provider's own nested shape (instance_launch_template,
-	// network/storage/capacity-reservation config, instance_requirements'
-	// ~20 attribute-based-selection fields) maps onto the schema almost
-	// entirely by name -- Generic() handles the whole tree once the
-	// VCpu/MiB/GiB acronym fix (nameconv.tokenFix) is in place, so no
-	// hand-built path is needed here the way auto_scaling_group_provider
-	// above has one.
+	// Generic() maps this tree once acronyms are fixed.
 	if p.ManagedInstancesProvider != nil {
 		if mipSch, serr := schemaFor("aws_ecs_capacity_provider"); serr == nil {
 			if nb, ok := mipSch.NestedBlock("managed_instances_provider"); ok {
@@ -408,19 +374,12 @@ func hydrateEKS(ctx context.Context, c *Clients, r model.Resource) (map[string]a
 		}
 		vc["endpoint_public_access"] = vpc.EndpointPublicAccess
 		vc["endpoint_private_access"] = vpc.EndpointPrivateAccess
-		// AWS's own default (0.0.0.0/0, plus ::/0 for dual-stack) is what a
-		// cluster with no real restriction returns -- only setting it when
-		// genuinely present avoids a spurious diff for the common case,
-		// while still correctly capturing a locked-down production cluster
-		// that restricts API server access.
+		// set only when not AWS's open default
 		if len(vpc.PublicAccessCidrs) > 0 {
 			vc["public_access_cidrs"] = toAny(vpc.PublicAccessCidrs)
 		}
 		cfg["vpc_config"] = vc
 	}
-	// encryption_config (KMS-encrypted Kubernetes secrets) is common on any
-	// production cluster -- DescribeCluster returns it directly, no extra
-	// call needed.
 	if len(cl.EncryptionConfig) > 0 {
 		var ec []any
 		for _, e := range cl.EncryptionConfig {
@@ -450,10 +409,7 @@ func hydrateEKS(ctx context.Context, c *Clients, r model.Resource) (map[string]a
 	return cfg, nil
 }
 
-// hydrateECRRepo: the SDK's RepositoryName field doesn't snake-case to the
-// schema's Required "name" attribute -- Generic() alone silently produced
-// config missing a Required attribute for every repository (would fail
-// `tofu validate` outright, "name is required").
+// RepositoryName maps to the required name.
 func hydrateECRRepo(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	sch, err := schemaFor("aws_ecr_repository")
 	if err != nil {

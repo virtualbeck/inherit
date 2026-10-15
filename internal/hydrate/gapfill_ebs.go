@@ -11,9 +11,6 @@ import (
 
 func init() { registerGapFiller(gapFillEBSDefaults) }
 
-// gapFillEBSDefaults discovers the region's EBS-encryption-by-default
-// settings -- true account/region singletons (GetEbsEncryptionByDefault/
-// GetEbsDefaultKmsKeyId take no input), no ARN or tagging concept at all.
 func gapFillEBSDefaults(ctx context.Context, c *Clients, region string) ([]model.Resource, error) {
 	cl := ec2.NewFromConfig(c.Cfg(region))
 	var out []model.Resource
@@ -27,10 +24,7 @@ func gapFillEBSDefaults(ctx context.Context, c *Clients, region string) ([]model
 	}
 
 	if key, err := cl.GetEbsDefaultKmsKeyId(ctx, &ec2.GetEbsDefaultKmsKeyIdInput{}); err == nil {
-		// GetEbsDefaultKmsKeyId returns the literal alias "alias/aws/ebs"
-		// (not an ARN) when the account is still on the AWS-managed default
-		// -- key_arn is Required+ARN-validated, so only emit this when a
-		// real customer key has actually been set as the default.
+		// customer keys only; the default is an alias
 		if arn := aws.ToString(key.KmsKeyId); strings.HasPrefix(arn, "arn:") {
 			out = append(out, model.Resource{
 				Service: "ec2", Type: "ebs-default-kms-key", TFType: "aws_ebs_default_kms_key",

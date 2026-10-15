@@ -14,8 +14,6 @@ func init() {
 	registerFanout("aws_guardduty_detector", fanoutGuardDutyExtras)
 }
 
-// fanoutGuardDutyExtras expands a detector into its filters and publishing
-// destinations, each a separate top-level resource in the provider.
 func fanoutGuardDutyExtras(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	cl := guardduty.NewFromConfig(c.Cfg(parent.Region))
 	detectorID := parent.ID
@@ -64,23 +62,11 @@ func fanoutGuardDutyExtras(ctx context.Context, c *Clients, parent model.Resourc
 		filterToken = out.NextToken
 	}
 
-	// GetDetector's own Features list is the authoritative source for each
-	// feature's current enabled/disabled state -- one aws_guardduty_detector_feature
-	// per entry, matching whatever real state each is actually in.
+	// one feature resource per detector feature
 	if det, err := cl.GetDetector(ctx, &guardduty.GetDetectorInput{DetectorId: &detectorID}); err == nil {
 		for _, f := range det.Features {
 			name := string(f.Name)
-			// GetDetector's response uses the broader DetectorFeatureResult
-			// enum, which includes three always-on, non-toggleable legacy
-			// data sources (FLOW_LOGS/CLOUD_TRAIL/DNS_LOGS) alongside the
-			// real, user-configurable features -- but
-			// aws_guardduty_detector_feature's schema only accepts the
-			// narrower DetectorFeature enum (the 9 actually-settable
-			// features), which doesn't include any of the three. Confirmed
-			// by a real "expected name to be one of [...]" tofu validate
-			// failure against a live detector, not assumed: every detector
-			// reports these three regardless of any user configuration, so
-			// they're never legitimately emittable as this resource type.
+			// legacy always-on sources aren't valid feature names
 			if name == "" || name == "FLOW_LOGS" || name == "CLOUD_TRAIL" || name == "DNS_LOGS" {
 				continue
 			}
@@ -221,9 +207,7 @@ func fanoutGuardDutyExtras(ctx context.Context, c *Clients, parent model.Resourc
 			return kids, err
 		}
 		for _, m := range out.Members {
-			// Email is only populated for members added by invitation (per
-			// ListMembers' own doc comment) -- schema Required, so an
-			// org-auto-associated member with no email can't be emitted.
+			// email is required; invited members only
 			email := aws.ToString(m.Email)
 			accountID := aws.ToString(m.AccountId)
 			if email == "" || accountID == "" {
@@ -247,10 +231,7 @@ func fanoutGuardDutyExtras(ctx context.Context, c *Clients, parent model.Resourc
 		memberToken = out.NextToken
 	}
 
-	// Only meaningful on the account delegated as this organization's
-	// GuardDuty administrator -- DescribeOrganizationConfiguration errors
-	// (or returns nothing useful) everywhere else, same skip-on-error
-	// pattern as the other org-only gap-fillers in this codebase.
+	// works only on the delegated admin account
 	if oc, err := cl.DescribeOrganizationConfiguration(ctx, &guardduty.DescribeOrganizationConfigurationInput{DetectorId: &detectorID}); err == nil {
 		if v := string(oc.AutoEnableOrganizationMembers); v != "" {
 			kids = append(kids, model.Resource{
@@ -296,14 +277,7 @@ func fanoutGuardDutyExtras(ctx context.Context, c *Clients, parent model.Resourc
 	return kids, nil
 }
 
-// guarddutyCriterion converts FindingCriteria.Criterion (map[string]Condition,
-// keyed by the field name) into the schema's repeatable
-// {field, equals, not_equals, greater_than, ...} block shape -- a
-// map-vs-list-of-struct mismatch Generic() can't bridge on its own.
-// Only the non-deprecated Condition fields are read (Eq/Neq/Gt/Gte/Lt/Lte are
-// superseded by Equals/NotEquals/GreaterThan*/LessThan*). The schema's
-// numeric comparisons are strings, not the SDK's int64, so they're formatted
-// explicitly rather than passed through.
+// Criterion map to repeatable blocks; non-deprecated fields.
 func guarddutyCriterion(m map[string]gdtypes.Condition) []any {
 	var out []any
 	for field, cond := range m {

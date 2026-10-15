@@ -31,9 +31,7 @@ func hydrateRoute53Zone(ctx context.Context, c *Clients, r model.Resource) (map[
 			cfg["comment"] = d
 		}
 	}
-	// GetHostedZone returns the associated VPCs directly (private zones
-	// only) -- omitting them isn't just an empty diff, it's the provider
-	// reading real associations back and finding config declares none.
+	// private zones: VPC associations must be declared
 	var vpcs []any
 	for _, v := range out.VPCs {
 		vpcs = append(vpcs, map[string]any{
@@ -137,8 +135,6 @@ func hydrateHealthCheck(ctx context.Context, c *Clients, r model.Resource) (map[
 	if hc.RequestInterval != nil {
 		cfg["request_interval"] = *hc.RequestInterval
 	}
-	// a CALCULATED or CLOUDWATCH_METRIC health check has nothing else
-	// recoverable at all without its type-specific fields below.
 	if hc.Disabled != nil {
 		cfg["disabled"] = *hc.Disabled
 	}

@@ -13,8 +13,6 @@ import (
 	"github.com/virtualbeck/inherit/internal/tf"
 )
 
-// tfPlanJSON is the slice of `tofu show -json <planfile>` this package reads:
-// enough to verify a plan's safety, nothing more.
 type tfPlanJSON struct {
 	ResourceChanges []struct {
 		Address string `json:"address"`
@@ -24,16 +22,7 @@ type tfPlanJSON struct {
 	} `json:"resource_changes"`
 }
 
-// verifyImportOnlyPlan reports whether every resource change in a plan is
-// exactly a no-op (the only shape ApplyPlanFile is ever allowed to see for
-// --fast-import). `-target` pulls in anything a targeted resource directly
-// references as a dependency even if it wasn't explicitly listed, so this
-// checks every entry the plan actually contains, not just the requested
-// target list -- a pulled-in dependency that isn't a safe no-op must block
-// the apply exactly the same as an explicitly targeted one would.
-//
-// An empty ResourceChanges list is safe trivially: there is nothing for
-// ApplyPlanFile to do.
+// Every change, dependencies included, must be a no-op.
 func verifyImportOnlyPlan(planJSON []byte) (bool, string) {
 	var p tfPlanJSON
 	if err := json.Unmarshal(planJSON, &p); err != nil {
@@ -47,36 +36,7 @@ func verifyImportOnlyPlan(planJSON []byte) (bool, string) {
 	return true, ""
 }
 
-// runFastImport bulk-imports via native `import` blocks + `apply`, batched
-// in chunks, instead of one `terraform import` subprocess per resource (see
-// runImports). This is dramatically cheaper at scale -- one process per
-// chunk instead of one per resource, each with the full local-state
-// read/parse/write overhead -- but apply is a strictly more powerful (and
-// more dangerous) operation than classic import's Read-only Import, so
-// every chunk goes through a hard, structural gate before anything is ever
-// applied:
-//
-//  1. Every resource gets `lifecycle { ignore_changes = all }` for the
-//     duration of this run, via a transient override file (removed
-//     afterward regardless of outcome) -- so no live attribute can ever be
-//     pushed to match config, no matter what the generated config says.
-//  2. Each chunk is planned (read-only, saved to a plan file) and NOT
-//     applied yet.
-//  3. The saved plan's JSON is inspected: every single resource change in
-//     it -- including anything pulled in only as a dependency -- must be
-//     exactly a no-op import. Anything else (a create, an update a defeated
-//     ignore_changes somehow missed, a replace) aborts that chunk before
-//     apply ever runs.
-//  4. Only a chunk that passes step 3 gets applied, and only the exact
-//     saved plan from step 2 -- nothing is re-planned at apply time.
-//
-// Batches start large (each costs three tofu runs that reload the whole
-// project and state, ~6s even on a small account), and a batch that fails at
-// any step (plan errors -- e.g. a resource's import target no longer exists
-// -- or fails verification) is split in half and retried, down to
-// fastImportMinBatch; what still fails falls back to the slow but
-// unconditionally-safe classic per-resource import (runImports) for just
-// those resources, not the whole run. See fastBatches.
+// runFastImport: pin, plan, verify no-op, apply that plan.
 func runFastImport(ctx context.Context, r *tf.Runner, absOut string, imports []emit.ImportSpec, chunkSize, classicConcurrency int) error {
 	if chunkSize <= 0 {
 		chunkSize = len(imports)
@@ -91,10 +51,7 @@ func runFastImport(ctx context.Context, r *tf.Runner, absOut string, imports []e
 		return nil
 	}
 
-	// Overrides cover every import-covered resource, not just this run's
-	// pending set: a chunk's -target can pull in an already-imported
-	// resource as a dependency, and it needs the same ignore_changes = all
-	// protection as everything else being applied in that same plan.
+	// Cover all imports: -target pulls in dependencies.
 	overridePaths, err := emit.WriteImportOverrides(absOut, imports)
 	if err != nil {
 		return fmt.Errorf("writing import overrides: %w", err)
@@ -116,7 +73,7 @@ func runFastImport(ctx context.Context, r *tf.Runner, absOut string, imports []e
 		return applyChunk(ctx, r, planDir, seq, batch)
 	})
 	if err != nil {
-		return err // interrupted: the deferred cleanup removes the overrides
+		return err // interrupted; deferred cleanup removes overrides
 	}
 
 	var fallbackErr error
@@ -129,13 +86,7 @@ func runFastImport(ctx context.Context, r *tf.Runner, absOut string, imports []e
 	return fallbackErr
 }
 
-// fastBatches feeds pending through apply in batches of at most maxBatch,
-// in order. A batch that fails is halved and both halves retried right away,
-// until a failing batch is no larger than minBatch; those resources are
-// returned for classic import. In the common case (everything importable)
-// that's ceil(n/maxBatch) applies; one bad resource costs about log2(maxBatch)
-// extra plans, not a classic import of its whole batch. Stops with ctx's
-// error once ctx is cancelled.
+// fastBatches halves failing batches down to minBatch.
 func fastBatches(ctx context.Context, pending []emit.ImportSpec, maxBatch, minBatch int, apply func([]emit.ImportSpec) (int, error)) (done int, fallback []emit.ImportSpec, err error) {
 	queue := slices.Collect(slices.Chunk(pending, max(maxBatch, 1)))
 	for len(queue) > 0 {
@@ -151,7 +102,7 @@ func fastBatches(ctx context.Context, pending []emit.ImportSpec, maxBatch, minBa
 			done += n
 			fmt.Fprintf(os.Stderr, "  imported %d (%d/%d)\n", n, done, len(pending))
 		case ctx.Err() != nil:
-			return done, fallback, ctx.Err() // interrupted mid-batch: not a failure
+			return done, fallback, ctx.Err() // interrupted, not failed
 		case len(batch) > minBatch:
 			fmt.Fprintf(os.Stderr, "  ! batch of %d: %v -- splitting\n", len(batch), err)
 			mid := len(batch) / 2
@@ -164,9 +115,7 @@ func fastBatches(ctx context.Context, pending []emit.ImportSpec, maxBatch, minBa
 	return done, fallback, nil
 }
 
-// applyChunk runs the plan -> verify -> apply sequence for one chunk. On any
-// failure it returns an error describing what went wrong and applies
-// nothing; the caller falls the whole chunk back to classic import.
+// applyChunk plans, verifies and applies; nothing on failure.
 func applyChunk(ctx context.Context, r *tf.Runner, planDir string, idx int, chunk []emit.ImportSpec) (int, error) {
 	targets := make([]string, len(chunk))
 	for i, s := range chunk {
@@ -193,10 +142,6 @@ func applyChunk(ctx context.Context, r *tf.Runner, planDir string, idx int, chun
 	return len(chunk), nil
 }
 
-// firstLine trims an error/output blob down to its most informative line for
-// a one-line progress log; the full text is redundant here since a failed
-// chunk's resources get retried individually via classic import, which
-// prints its own per-resource error output.
 func firstLine(s string) string {
 	s = strings.TrimSpace(s)
 	if i := strings.IndexByte(s, '\n'); i >= 0 {

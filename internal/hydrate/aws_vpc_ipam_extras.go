@@ -18,9 +18,7 @@ func init() {
 	register("aws_vpc_ipam_resource_discovery_association", hydrateIPAMResourceDiscoveryAssociation)
 }
 
-// ipamArnID extracts the trailing id segment off an "arn:...:ipam-x/id"
-// style ARN -- several IPAM sub-resources only carry the parent's ARN, not
-// its bare id, in their own Describe response.
+// ipamArnID returns an ARN's trailing ID.
 func ipamArnID(arn string) string {
 	if i := strings.LastIndex(arn, "/"); i >= 0 {
 		return arn[i+1:]
@@ -87,7 +85,6 @@ func hydrateIPAMPool(ctx context.Context, c *Clients, r model.Resource) (map[str
 	return cfg, nil
 }
 
-// fanoutIPAMPoolCIDRs expands a pool into its provisioned CIDR blocks.
 func fanoutIPAMPoolCIDRs(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	cl := ec2.NewFromConfig(c.Cfg(parent.Region))
 	poolID := parent.ID
@@ -153,9 +150,7 @@ func hydrateIPAMResourceDiscovery(ctx context.Context, c *Clients, r model.Resou
 	if v := aws.ToString(d.Description); v != "" {
 		cfg["description"] = v
 	}
-	// Required, min 1 -- confirmed by a real tofu validate failure when
-	// this was left out (the schema list wasn't checked for block_types,
-	// only top-level attributes, on the first pass).
+	// required, minimum one
 	if len(d.OperatingRegions) > 0 {
 		var regions []any
 		for _, or := range d.OperatingRegions {

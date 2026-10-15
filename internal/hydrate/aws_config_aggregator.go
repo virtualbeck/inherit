@@ -11,12 +11,7 @@ import (
 
 func init() { register("aws_config_configuration_aggregator", hydrateConfigAggregator) }
 
-// hydrateConfigAggregator is hand-built rather than Generic(): the SDK's
-// AccountAggregationSource/OrganizationAggregationSource use AwsRegions/
-// AllAwsRegions, which don't snake-case to the schema's regions/all_regions
-// (an attribute-name mismatch within an otherwise-fine nested block, not the
-// whole-block-drop failure mode -- Generic() would just silently omit those
-// two fields from each block instead).
+// AwsRegions/AllAwsRegions don't map to schema names.
 func hydrateConfigAggregator(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	name := r.ID
 	out, err := configservice.NewFromConfig(c.Cfg(r.Region)).DescribeConfigurationAggregators(ctx, &configservice.DescribeConfigurationAggregatorsInput{

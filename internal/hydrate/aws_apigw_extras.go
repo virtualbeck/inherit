@@ -93,8 +93,6 @@ func hydrateAPIGatewayUsagePlan(ctx context.Context, c *Clients, r model.Resourc
 	return cfg, nil
 }
 
-// fanoutAPIGatewayUsagePlanKeys expands a usage plan into the API keys
-// associated with it.
 func fanoutAPIGatewayUsagePlanKeys(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	cl := agw.NewFromConfig(c.Cfg(parent.Region))
 	planID := parent.ID
@@ -183,8 +181,6 @@ func agwEndpointTypeStrings(types []agwtypes.EndpointType) []string {
 	return out
 }
 
-// fanoutAPIGatewayBasePathMappings expands a custom domain name into its
-// base path mappings (which REST API + stage each path routes to).
 func fanoutAPIGatewayBasePathMappings(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	cl := agw.NewFromConfig(c.Cfg(parent.Region))
 	domain := parent.ID
@@ -197,11 +193,7 @@ func fanoutAPIGatewayBasePathMappings(ctx context.Context, c *Clients, parent mo
 		}
 		for _, m := range page.Items {
 			basePath := aws.ToString(m.BasePath)
-			// AWS's own API uses the literal string "(none)" for an empty
-			// base path, but the provider's import id format wants a bare
-			// empty segment there instead ("domain.com/", not
-			// "domain.com/(none)") -- confirmed against the real provider
-			// source's basePathMappingParseResourceID.
+			// API's "(none)" is an empty import segment
 			idPath := basePath
 			if idPath == "(none)" {
 				idPath = ""
@@ -270,9 +262,6 @@ func hydrateAPIGatewayClientCertificate(ctx context.Context, c *Clients, r model
 	return cfg, nil
 }
 
-// gapFillAPIGatewayAccount discovers the account/region-level API Gateway
-// settings singleton (CloudWatch role for execution logging, throttle
-// settings) -- GetAccount takes no input.
 func gapFillAPIGatewayAccount(ctx context.Context, c *Clients, region string) ([]model.Resource, error) {
 	cl := agw.NewFromConfig(c.Cfg(region))
 	out, err := cl.GetAccount(ctx, &agw.GetAccountInput{})

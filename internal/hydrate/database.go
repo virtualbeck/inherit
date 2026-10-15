@@ -47,8 +47,6 @@ func init() {
 	register("aws_elasticache_parameter_group", hydrateCacheParamGroup)
 }
 
-// RDS is the classic API/Terraform name mismatch; a few explicit overrides plus
-// flattening of the nested subnet-group and security-group lists.
 func hydrateDBInstance(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	sch, err := schemaFor("aws_db_instance")
 	if err != nil {
@@ -65,20 +63,7 @@ func hydrateDBInstance(ctx context.Context, c *Clients, r model.Resource) (map[s
 	}
 	d := out.DBInstances[0]
 
-	// Neptune cluster instances share this exact ARN segment (rds:db:id)
-	// with RDS/Aurora instances too -- same collision family as the
-	// cluster/cluster-pg ones above, confirmed by a real fresh import
-	// where a Neptune instance came back TWICE: once correctly as
-	// aws_neptune_cluster_instance (via fanoutNeptuneCluster's own
-	// DescribeDBInstances-by-cluster-id call), and once here as a
-	// duplicate, wrongly-typed aws_db_instance (this call didn't even
-	// fail the way the cluster/cluster-pg case did -- aws_db_instance's
-	// schema has no strict engine enum to reject "neptune" outright, so
-	// the duplicate silently validated fine). Excluded rather than
-	// retyped: unlike the cluster/cluster-pg fix, there's already a
-	// complete, correct producer for this exact resource (the fanout), so
-	// retyping here would just create a second, independently-named
-	// duplicate through a different path instead of one.
+	// Neptune instances come from the cluster fanout.
 	if aws.ToString(d.Engine) == "neptune" {
 		return nil, fmt.Errorf("neptune instance %q is emitted via aws_neptune_cluster_instance instead", r.ID)
 	}
@@ -115,21 +100,16 @@ func hydrateDBInstance(ctx context.Context, c *Clients, r model.Resource) (map[s
 	delete(cfg, "vpc_security_groups")
 	delete(cfg, "db_subnet_group")
 
-	// DbInstancePort is a deprecated field that reads 0; take the real one from
-	// the endpoint. Without an explicit port the provider plans a spurious change.
+	// DbInstancePort reads 0; use the endpoint port
 	if d.Endpoint != nil && aws.ToInt32(d.Endpoint.Port) != 0 {
 		cfg["port"] = aws.ToInt32(d.Endpoint.Port)
 	} else {
 		delete(cfg, "port")
 	}
-	// not recoverable from the API; the provider defaults it to true on import,
-	// so match that to avoid a permanent diff.
+	// unrecoverable; matches the provider's import default
 	cfg["skip_final_snapshot"] = true
 
-	// manage_master_user_password has no corresponding SDK field at all --
-	// its presence is only inferable from MasterUserSecret being set at all
-	// (the AWS-managed-password feature). Generic() can never produce this
-	// key since nothing in DBInstance is literally named that.
+	// inferred from MasterUserSecret
 	if d.MasterUserSecret != nil {
 		cfg["manage_master_user_password"] = true
 		if v := aws.ToString(d.MasterUserSecret.KmsKeyId); v != "" {
@@ -164,20 +144,7 @@ func hydrateDBSubnetGroup(ctx context.Context, c *Clients, r model.Resource) (ma
 	return cfg, nil
 }
 
-// hydrateRDSCluster is hand-built rather than a bare genericHydrator because
-// several attributes' SDK field name doesn't mechanically snake-case to the
-// schema's name: the resource's own cluster_identifier (DBClusterIdentifier
-// -> the mechanical
-// "db_cluster_identifier", not "cluster_identifier"), db_subnet_group_name /
-// db_cluster_parameter_group_name (both missing their "_name" suffix in the
-// SDK field name), and both scaling-config blocks
-// (serverless_v2_scaling_configuration / scaling_configuration_info vs the
-// schema's serverlessv2_scaling_configuration / scaling_configuration --
-// meaning any Aurora Serverless v2 cluster's min/max ACU settings were never
-// emitted at all). vpc_security_group_ids and iam_roles are dropped for a
-// different reason: Generic() only flattens map(string)/primitive-list
-// shapes, and the SDK returns both as []struct{...}, which never matches a
-// list(string) schema attribute even under the right name.
+// SDK names don't snake-case to several attributes.
 func hydrateRDSCluster(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	sch, err := schemaFor("aws_rds_cluster")
 	if err != nil {
@@ -192,16 +159,7 @@ func hydrateRDSCluster(ctx context.Context, c *Clients, r model.Resource) (map[s
 	}
 	d := out.DBClusters[0]
 
-	// Neptune clusters share this exact ARN segment (rds:cluster:id) with
-	// RDS/Aurora -- confirmed as a real bug via a live account, not
-	// assumed: a real Neptune cluster hydrated as aws_rds_cluster and
-	// failed tofu validate outright ("expected engine to be one of
-	// [aurora-mysql aurora-postgresql mysql postgres], got neptune"). Same
-	// species as the cluster-pg collision fixed earlier -- retype and
-	// delegate to the already-correct hydrateNeptune rather than guess at
-	// a separate ARN segment for it (the registry's old
-	// {"neptune-db","cluster"} entry was itself apparently never a real
-	// match for actual Neptune cluster ARNs).
+	// Neptune shares this ARN segment; delegate to hydrateNeptune.
 	if aws.ToString(d.Engine) == "neptune" {
 		cfg, nerr := hydrateNeptune(ctx, c, r)
 		if nerr != nil {
@@ -236,17 +194,12 @@ func hydrateRDSCluster(ctx context.Context, c *Clients, r model.Resource) (map[s
 		}
 		cfg["iam_roles"] = roles
 	}
-	// not recoverable from the API; the provider defaults it to true on
-	// import, so match that to avoid a permanent diff -- same as
-	// aws_db_instance.
+	// unrecoverable; matches the provider's import default
 	cfg["skip_final_snapshot"] = true
 	return cfg, nil
 }
 
-// DynamoDB key schema is split across AttributeDefinitions + KeySchema in the
-// API but flat hash_key/range_key + attribute blocks in Terraform.
-// point_in_time_recovery and ttl are each their own API call, not part of
-// DescribeTable at all -- best-effort, like KMS's enable_key_rotation.
+// Keys flatten; PITR and TTL are separate calls.
 func hydrateDynamoTable(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	cl := dynamodb.NewFromConfig(c.Cfg(r.Region))
 	out, err := cl.DescribeTable(ctx, &dynamodb.DescribeTableInput{TableName: &r.ID})
@@ -355,9 +308,7 @@ func hydrateDynamoTable(ctx context.Context, c *Clients, r model.Resource) (map[
 		cfg["server_side_encryption"] = sse
 	}
 
-	// both explicitly set, enabled or not, to match whatever Read reports --
-	// same reasoning as KMS's enable_key_rotation: omitting a schema-default
-	// bool/block reads as "off" and diffs against a table that has it on.
+	// always set: omitted reads as off
 	if cb, err := cl.DescribeContinuousBackups(ctx, &dynamodb.DescribeContinuousBackupsInput{TableName: &r.ID}); err == nil && cb.ContinuousBackupsDescription != nil {
 		if pitr := cb.ContinuousBackupsDescription.PointInTimeRecoveryDescription; pitr != nil {
 			cfg["point_in_time_recovery"] = map[string]any{
@@ -411,8 +362,6 @@ func hydrateRedshift(ctx context.Context, c *Clients, r model.Resource) (map[str
 	if cl.Encrypted != nil {
 		cfg["encrypted"] = *cl.Encrypted
 	}
-	// iam_roles (S3 COPY/UNLOAD access) is one of the more commonly
-	// attached knobs on a real cluster, alongside the other fields below.
 	if cl.Endpoint != nil && cl.Endpoint.Port != nil {
 		cfg["port"] = *cl.Endpoint.Port
 	}
@@ -444,16 +393,7 @@ func hydrateRedshift(ctx context.Context, c *Clients, r model.Resource) (map[str
 	return cfg, nil
 }
 
-// hydrateNeptune is hand-built rather than a bare genericHydrator because it
-// hits the same class of bug as aws_rds_cluster (Neptune's DescribeDBClusters
-// response is structurally near-identical to RDS's): DBClusterIdentifier,
-// DBSubnetGroup and DBClusterParameterGroup don't mechanically snake-case to
-// cluster_identifier / neptune_subnet_group_name / neptune_cluster_parameter_group_name
-// (different prefix, not just a missing suffix, since Neptune's own
-// Terraform attribute names use "neptune_" rather than "db_"), KmsKeyId ->
-// "kms_key_id" doesn't match the schema's kms_key_arn, and
-// VpcSecurityGroups/AssociatedRoles are []struct{} that Generic() can't
-// flatten into vpc_security_group_ids/iam_roles regardless of naming.
+// Same naming gaps as aws_rds_cluster.
 func hydrateNeptune(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	sch, err := schemaFor("aws_neptune_cluster")
 	if err != nil {
@@ -494,16 +434,7 @@ func hydrateNeptune(ctx context.Context, c *Clients, r model.Resource) (map[stri
 	return cfg, nil
 }
 
-// hydrateElastiCache is hand-rolled, not Generic()-via-genericHydrator: this
-// resource's schema diverges from the SDK's field names on several settable
-// attributes, including its own Required identifier -- CacheCluster's
-// CacheClusterId snake-cases to "cache_cluster_id", but the schema's
-// attribute is just "cluster_id". Generic() silently drops anything it
-// can't match to the schema, which would otherwise leave every discovered
-// cluster missing its own Required cluster_id entirely.
-// node_type/maintenance_window/subnet_group_name have the same kind of
-// mismatch; security_group_ids/parameter_group_name/
-// notification_topic_arn are nested structs Generic() can't flatten at all.
+// SDK names diverge, cluster_id included.
 func hydrateElastiCache(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	sch, err := schemaFor("aws_elasticache_cluster")
 	if err != nil {
@@ -546,15 +477,7 @@ func hydrateElastiCache(ctx context.Context, c *Clients, r model.Resource) (map[
 	return cfg, nil
 }
 
-// hydrateElastiCacheRG has the same class of gap as hydrateElastiCache, plus
-// three enum-to-bool conversions the schema requires that the SDK exposes as
-// tri-state strings ("enabled"/"disabled"/"enabling"/"disabling") instead.
-// elastiCacheRGExtras builds the config keys Generic() can't produce for
-// aws_elasticache_replication_group: three tri-state-string-to-bool
-// conversions the schema requires as plain bools ("enabled"/"enabling" ->
-// true, matching the "still effectively on, just transitioning" case for
-// automatic failover), and a few nested-struct fields Generic() can't
-// flatten on its own.
+// Tri-state strings to bools, plus nested fields.
 func elastiCacheRGExtras(g ectypes.ReplicationGroup) map[string]any {
 	out := map[string]any{}
 	if v := string(g.AutomaticFailover); v != "" {
@@ -712,8 +635,7 @@ func hydrateMemoryDBCluster(ctx context.Context, c *Clients, r model.Resource) (
 	if cl.AutoMinorVersionUpgrade != nil {
 		cfg["auto_minor_version_upgrade"] = *cl.AutoMinorVersionUpgrade
 	}
-	// DataTiering is a string enum ("true"/"false") in the API but a bool in
-	// the schema.
+	// API string enum; schema bool
 	if v := string(cl.DataTiering); v != "" {
 		cfg["data_tiering"] = v == "true"
 	}
@@ -797,16 +719,7 @@ func hydrateDMSEndpoint(ctx context.Context, c *Clients, r model.Resource) (map[
 	if v := string(e.SslMode); v != "" {
 		cfg["ssl_mode"] = v
 	}
-	// Engine-specific settings blocks: all directly on the same
-	// DescribeEndpoints response (no separate call needed), and all map
-	// onto the schema by SDK field name once nameconv.tokenFix knows
-	// MySQL/MongoDb/PostgreSQL aren't mechanically snake-case-able the
-	// naive way. Only the 9 engines this provider version's schema
-	// actually models (mysql/postgres/oracle/redshift/kinesis/kafka/
-	// mongodb/redis/elasticsearch) are attempted -- docdb/dynamodb/
-	// ibm_db2/sqlserver/neptune/s3/sybase/timestream/gcp_mysql/lakehouse
-	// aren't in this schema at all, so there's no block to populate them
-	// into regardless of what the API returns.
+	// the engine settings blocks this schema models
 	if sch, serr := schemaFor("aws_dms_endpoint"); serr == nil {
 		for _, es := range []struct {
 			key string
@@ -937,20 +850,14 @@ func hydrateDBParamGroup(ctx context.Context, c *Clients, r model.Resource) (map
 	if v := aws.ToString(g.Description); v != "" {
 		cfg["description"] = v
 	}
-	// DescribeDBParameterGroups doesn't return the parameters themselves --
-	// that's DescribeDBParameters, a separate paginated call. The provider's
-	// own Read only ever surfaces parameters with Source "user" (explicitly
-	// set), not the full engine-default list, so match that filter here.
+	// parameters are a separate call
 	if params := dbParamGroupParams(ctx, rds.NewFromConfig(c.Cfg(r.Region)), name); len(params) > 0 {
 		cfg["parameter"] = params
 	}
 	return cfg, nil
 }
 
-// userParam renders one engine parameter for a `parameter` block, or reports
-// false unless it was set explicitly: the provider's Read only surfaces
-// Source "user" parameters, never the engine defaults. Pass "" for engines
-// whose parameter block has no apply_method (ElastiCache, Redshift).
+// userParam keeps Source "user" parameters only.
 func userParam(source, name, value *string, applyMethod string) (map[string]any, bool) {
 	if aws.ToString(source) != "user" {
 		return nil, false
@@ -983,13 +890,7 @@ func hydrateRDSClusterParamGroup(ctx context.Context, c *Clients, r model.Resour
 	name := r.ID
 	out, err := rds.NewFromConfig(c.Cfg(r.Region)).DescribeDBClusterParameterGroups(ctx, &rds.DescribeDBClusterParameterGroupsInput{DBClusterParameterGroupName: &name})
 	if err != nil {
-		// Neptune cluster parameter groups share this exact ARN resource
-		// segment ("rds:cluster-pg:name", confirmed against the real
-		// provider's own ARN acceptance-test check) with RDS/Aurora's --
-		// same shared-ARN-segment species as DataSync locations/DX virtual
-		// interfaces/TGW peering attachments found in earlier rounds. A
-		// DBClusterParameterGroupNotFoundFault here means it's not an RDS
-		// group at all; try Neptune before giving up.
+		// not RDS; Neptune shares this segment
 		if _, ok := errors.AsType[*rdstypes.DBClusterParameterGroupNotFoundFault](err); !ok {
 			return nil, err
 		}
@@ -1006,9 +907,7 @@ func hydrateRDSClusterParamGroup(ctx context.Context, c *Clients, r model.Resour
 	if v := aws.ToString(g.Description); v != "" {
 		cfg["description"] = v
 	}
-	// same gap as aws_db_parameter_group: DescribeDBClusterParameterGroups
-	// doesn't return the parameters themselves, and only user-set ones (not
-	// the full engine-default list) belong in config.
+	// parameters are a separate call
 	if params := dbClusterParamGroupParams(ctx, rds.NewFromConfig(c.Cfg(r.Region)), name); len(params) > 0 {
 		cfg["parameter"] = params
 	}
@@ -1165,9 +1064,7 @@ func hydrateCacheParamGroup(ctx context.Context, c *Clients, r model.Resource) (
 	if v := aws.ToString(g.Description); v != "" {
 		cfg["description"] = v
 	}
-	// same gap as aws_db_parameter_group: DescribeCacheParameterGroups
-	// doesn't return the parameters themselves, and only user-set ones (not
-	// the full engine-default list) belong in config.
+	// parameters are a separate call
 	if params := cacheParamGroupParams(ctx, elasticache.NewFromConfig(c.Cfg(r.Region)), name); len(params) > 0 {
 		cfg["parameter"] = params
 	}

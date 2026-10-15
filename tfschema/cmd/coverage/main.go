@@ -1,8 +1,4 @@
-// Command coverage reports which AWS Terraform provider resource types inherit
-// can emit and which it cannot, grouped by service.
-//
-//	go run ./tfschema/cmd/coverage            # summary
-//	go run ./tfschema/cmd/coverage -md > docs/COVERAGE.md
+// Command coverage reports which provider types inherit emits.
 package main
 
 import (
@@ -16,8 +12,7 @@ import (
 	"github.com/virtualbeck/inherit/tfschema"
 )
 
-// multiWordServices are provider type prefixes whose "service" is more than one
-// underscore-separated token.
+// Type prefixes whose service spans several tokens.
 var multiWordServices = []string{
 	"api_gateway", "apigatewayv2", "vpc_security_group", "s3_bucket", "s3_access",
 	"cloudwatch_event", "cloudwatch_log", "resourcegroups", "route53_resolver",
@@ -29,8 +24,7 @@ var multiWordServices = []string{
 	"opensearch", "opensearchserverless", "prometheus", "grafana",
 }
 
-// priorities are uncovered types that turn up often in real accounts. Curated;
-// only the ones still uncovered are shown in the report.
+// Common uncovered types, listed while still uncovered.
 var priorities = []string{
 	"aws_kinesis_firehose_delivery_stream",
 	"aws_ecs_capacity_provider",

@@ -7,11 +7,7 @@ import (
 	ectypes "github.com/aws/aws-sdk-go-v2/service/elasticache/types"
 )
 
-// TestElastiCacheClusterOverrides guards against a Required-attribute drop:
-// CacheCluster's CacheClusterId snake-cases to "cache_cluster_id", but the
-// schema's attribute is just "cluster_id" -- Generic() silently drops it
-// (and node_type/maintenance_window/subnet_group_name) with no error,
-// leaving generated config missing its own Required identifying attribute.
+// CacheClusterId must land in the required cluster_id.
 func TestElastiCacheClusterOverrides(t *testing.T) {
 	sch, err := schemaFor("aws_elasticache_cluster")
 	if err != nil {

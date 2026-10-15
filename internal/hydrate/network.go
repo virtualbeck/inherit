@@ -60,13 +60,7 @@ func hydrateVPC(ctx context.Context, c *Clients, r model.Resource) (map[string]a
 	if err != nil {
 		return nil, err
 	}
-	// enable_dns_support/enable_dns_hostnames/enable_network_address_usage_metrics
-	// aren't part of DescribeVpcs at all -- each needs its own
-	// DescribeVpcAttribute call (one VpcAttributeName per call, same
-	// per-attribute quirk as instance attributes). enable_dns_support in
-	// particular is Optional with no Computed fallback in the schema, so
-	// leaving it unset here would show a permanent diff against the real
-	// value (which defaults to true, not false).
+	// DNS attributes need DescribeVpcAttribute, one per call.
 	ec2c := ec2.NewFromConfig(c.Cfg(r.Region))
 	if attr, aerr := ec2c.DescribeVpcAttribute(ctx, &ec2.DescribeVpcAttributeInput{
 		VpcId: &r.ID, Attribute: ec2types.VpcAttributeNameEnableDnsSupport,
@@ -84,14 +78,7 @@ func hydrateVPC(ctx context.Context, c *Clients, r model.Resource) (map[string]a
 		cfg["enable_network_address_usage_metrics"] = *attr.EnableNetworkAddressUsageMetrics.Value
 	}
 	if aws.ToBool(out.Vpcs[0].IsDefault) {
-		// AWS creates exactly one of these per region automatically; the
-		// provider models it as a wholly different resource type
-		// (aws_default_vpc) that ADOPTS the existing VPC rather than
-		// creating one, and almost everything about it -- cidr_block,
-		// instance_tenancy, dhcp_options_id, the default route/network
-		// ACL ids -- is Computed-only there, unlike the same names on
-		// plain aws_vpc. Only carry forward the handful of fields still
-		// settable on both.
+		// default VPC: only fields settable on both types
 		dcfg := map[string]any{retypeSentinel: "aws_default_vpc"}
 		for _, k := range []string{"tags", "enable_dns_support", "enable_dns_hostnames", "enable_network_address_usage_metrics"} {
 			if v, ok := cfg[k]; ok {
@@ -112,8 +99,7 @@ func hydrateSubnet(ctx context.Context, c *Clients, r model.Resource) (map[strin
 		return nil, fmt.Errorf("not found")
 	}
 	s := out.Subnets[0]
-	// Explicit field pick: Generic() would also emit availability_zone_id (which
-	// conflicts with availability_zone) and lone outpost-only args.
+	// Explicit picks avoid availability_zone_id conflicts.
 	cfg := map[string]any{"vpc_id": aws.ToString(s.VpcId)}
 	if v := aws.ToString(s.CidrBlock); v != "" {
 		cfg["cidr_block"] = v
@@ -164,9 +150,7 @@ func hydrateSubnet(ctx context.Context, c *Clients, r model.Resource) (map[strin
 	return cfg, nil
 }
 
-// The security group shell only. Rules come as separate
-// aws_vpc_security_group_ingress_rule / _egress_rule resources (the provider v6
-// direction); those get their own hydrator.
+// Rules are separate resources.
 func hydrateSecurityGroup(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	out, err := ec2.NewFromConfig(c.Cfg(r.Region)).DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{GroupIds: []string{r.ID}})
 	if err != nil {
@@ -218,11 +202,7 @@ func hydrateNAT(ctx context.Context, c *Clients, r model.Resource) (map[string]a
 		"subnet_id":         aws.ToString(n.SubnetId),
 		"connectivity_type": string(n.ConnectivityType),
 	}
-	// allocation_id is Optional but NOT Computed -- a multi-EIP NAT gateway
-	// has several NatGatewayAddresses entries, and picking the wrong one
-	// (not just omitting it) would put a real but incorrect EIP in config.
-	// IsPrimary marks which one the provider itself associates with
-	// allocation_id/private_ip; the rest are secondary.
+	// the primary address owns allocation_id
 	var secAlloc, secIPs []any
 	for _, a := range n.NatGatewayAddresses {
 		if aws.ToBool(a.IsPrimary) {
@@ -241,8 +221,7 @@ func hydrateNAT(ctx context.Context, c *Clients, r model.Resource) (map[string]a
 			secIPs = append(secIPs, v)
 		}
 	}
-	// no address was marked primary (single-address gateways sometimes omit
-	// the flag) -- fall back to the one address there is.
+	// single address, unmarked: use it
 	if _, ok := cfg["allocation_id"]; !ok && len(n.NatGatewayAddresses) == 1 {
 		a := n.NatGatewayAddresses[0]
 		if v := aws.ToString(a.AllocationId); v != "" {
@@ -278,7 +257,6 @@ func hydrateEIP(ctx context.Context, c *Clients, r model.Resource) (map[string]a
 	return Generic(out.Addresses[0], sch, nil)
 }
 
-// Route tables carry a nested `route` block per non-local route.
 func hydrateRouteTable(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	out, err := ec2.NewFromConfig(c.Cfg(r.Region)).DescribeRouteTables(ctx, &ec2.DescribeRouteTablesInput{
 		RouteTableIds: []string{r.ID},
@@ -298,15 +276,7 @@ func hydrateRouteTable(ctx context.Context, c *Clients, r model.Resource) (map[s
 			continue // the implicit local route
 		}
 		if gw := aws.ToString(rte.GatewayId); len(gw) > 5 && gw[:5] == "vpce-" {
-			// AWS auto-adds this route the moment a gateway VPC endpoint
-			// attaches to the table (via the endpoint's own
-			// route_table_ids) -- it isn't something the route table
-			// itself owns. Emitting it here as well would create a
-			// same-config dependency cycle (route table -> endpoint via
-			// this route, endpoint -> route table via route_table_ids)
-			// with no way to break it on either side; the provider's own
-			// docs say this attribute is exported read-only and must not
-			// be set in config for exactly this reason.
+			// endpoint-owned route; emitting it creates a cycle
 			continue
 		}
 		route := map[string]any{}
@@ -379,13 +349,7 @@ func hydrateTGW(ctx context.Context, c *Clients, r model.Resource) (map[string]a
 	return cfg, nil
 }
 
-// hydrateTGWAttach dispatches on ResourceType first: aws_ec2_transit_gateway_vpc_attachment
-// and aws_ec2_transit_gateway_peering_attachment share the exact same ARN
-// resource segment ("transit-gateway-attachment"), so a peering attachment
-// arrives pre-typed as the VPC variant by ResolveTFType's ARN-only
-// classification. DescribeTransitGatewayVpcAttachments returns zero results
-// for a peering attachment's ID, so the ResourceType check has to happen
-// before dispatching, not after a failed VPC-specific lookup.
+// VPC and peering attachments share an ARN segment.
 func hydrateTGWAttach(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	cl := ec2.NewFromConfig(c.Cfg(r.Region))
 	generic, gerr := cl.DescribeTransitGatewayAttachments(ctx, &ec2.DescribeTransitGatewayAttachmentsInput{
@@ -426,10 +390,7 @@ func hydrateTGWAttach(ctx context.Context, c *Clients, r model.Resource) (map[st
 	return cfg, nil
 }
 
-// hydrateTGWPeeringAttach retypes to aws_ec2_transit_gateway_peering_attachment.
-// RequesterTgwInfo is this attachment's own side (transit_gateway_id);
-// AccepterTgwInfo is the peer's (peer_transit_gateway_id/peer_account_id/
-// peer_region).
+// Requester is this side; accepter is the peer.
 func hydrateTGWPeeringAttach(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	out, err := ec2.NewFromConfig(c.Cfg(r.Region)).DescribeTransitGatewayPeeringAttachments(ctx, &ec2.DescribeTransitGatewayPeeringAttachmentsInput{
 		TransitGatewayAttachmentIds: []string{r.ID},
@@ -567,13 +528,7 @@ func hydrateVPNConnection(ctx context.Context, c *Clients, r model.Resource) (ma
 	return cfg, nil
 }
 
-// xmlVpnConnectionConfig is CustomerGatewayConfiguration, an XML document
-// (a completely separate response field from the JSON Options.TunnelOptions
-// used above) -- the provider's own Read parses this same XML for the one
-// handful of fields it doesn't get from TunnelOptions at all (address,
-// bgp_asn, bgp_holdtime, cgw/vgw_inside_address, preshared_key). Field names
-// and XML tags copied verbatim from the provider's own
-// customerGatewayConfigurationToTunnelInfo/xmlIpsecTunnel.
+// Tunnel XML, parsed as the provider does.
 type xmlVpnConnectionConfig struct {
 	Tunnels []xmlIpsecTunnel `xml:"ipsec_tunnel"`
 }
@@ -587,23 +542,7 @@ type xmlIpsecTunnel struct {
 	VgwInsideAddress string `xml:"vpn_gateway>tunnel_inside_address>ip_address"`
 }
 
-// vpnTunnelConfig builds tunnel1_*/tunnel2_* from both of DescribeVpnConnections'
-// two, independently-shaped tunnel data sources: the XML CustomerGatewayConfiguration
-// document (unordered) and the JSON Options.TunnelOptions list (also unordered,
-// and not necessarily in the same order as the XML tunnels). Nil (no tunnel1_*/
-// tunnel2_* attributes at all) if there aren't exactly two of each -- a
-// same-shape mismatch means something about this connection doesn't match the
-// standard two-tunnel model this whole scheme assumes, and guessing further
-// risks mislabeling which tunnel is which rather than just omitting the block.
-//
-// Tunnel1-vs-tunnel2 assignment: the provider's own Read reorders the XML
-// tunnels to match hints from the resource's OWN CURRENT config
-// (tunnel1_preshared_key / tunnel1_inside_cidr / tunnel1_inside_ipv6_cidr) when
-// present, falling back to a lexicographic sort by outside (tunnel) address
-// otherwise. On a fresh import there IS no current config yet (d.Get returns
-// each hint's zero value pre-import), so the hint-matching branches never
-// fire in practice here -- only the address-sort fallback ever applies, and
-// that's the only ordering this replicates.
+// Tunnels ordered by outside address, like the provider.
 func vpnTunnelConfig(xmlConfig string, opts *ec2types.VpnConnectionOptions) map[string]any {
 	if xmlConfig == "" || opts == nil || len(opts.TunnelOptions) != 2 {
 		return nil
@@ -615,8 +554,7 @@ func vpnTunnelConfig(xmlConfig string, opts *ec2types.VpnConnectionOptions) map[
 	tunnels := doc.Tunnels
 	sort.Slice(tunnels, func(i, j int) bool { return tunnels[i].OutsideAddress < tunnels[j].OutsideAddress })
 
-	// match each JSON TunnelOption to its XML counterpart by outside
-	// address -- the one fact both data sources independently agree on.
+	// pair JSON and XML tunnels by outside address
 	byAddr := map[string]ec2types.TunnelOption{}
 	for _, to := range opts.TunnelOptions {
 		byAddr[aws.ToString(to.OutsideIpAddress)] = to
@@ -630,11 +568,7 @@ func vpnTunnelConfig(xmlConfig string, opts *ec2types.VpnConnectionOptions) map[
 			return nil // can't reliably attribute this tunnel's JSON-side config
 		}
 		p := fmt.Sprintf("tunnel%d_", n)
-		// address/bgp_asn/bgp_holdtime/cgw_inside_address/vgw_inside_address
-		// are Computed-only in the schema -- the XML is only needed here to
-		// determine tunnel1-vs-tunnel2 order and to correlate the JSON side
-		// by address; preshared_key is the one XML field that's actually
-		// settable.
+		// only preshared_key is settable
 		if xt.PreSharedKey != "" {
 			cfg[p+"preshared_key"] = xt.PreSharedKey
 		}
@@ -752,9 +686,7 @@ func intAlgos2(vs []ec2types.Phase2IntegrityAlgorithmsListValue) []any {
 	return out
 }
 
-// hydrateVPCEndpoint: the SDK's PolicyDocument field doesn't snake-case to
-// the schema's "policy" attribute name (the provider renamed it on the
-// Terraform side).
+// PolicyDocument maps to policy.
 func hydrateVPCEndpoint(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	sch, err := schemaFor("aws_vpc_endpoint")
 	if err != nil {
@@ -818,11 +750,7 @@ func hydrateNetworkACL(ctx context.Context, c *Clients, r model.Resource) (map[s
 	acl := out.NetworkAcls[0]
 	cfg := map[string]any{}
 	if aws.ToBool(acl.IsDefault) {
-		// the provider flatly refuses to import a VPC's default network ACL
-		// as aws_network_acl ("use the aws_default_network_acl resource
-		// instead"). Same rule shape, different identifying attribute
-		// (default_network_acl_id, not vpc_id -- vpc_id is computed-only
-		// on this type).
+		// default NACLs import only as aws_default_network_acl
 		cfg[retypeSentinel] = "aws_default_network_acl"
 		cfg["default_network_acl_id"] = r.ID
 	} else {
@@ -845,13 +773,7 @@ func hydrateNetworkACL(ctx context.Context, c *Clients, r model.Resource) (map[s
 				"rule_no":  aws.ToInt32(e.RuleNumber),
 				"action":   string(e.RuleAction),
 				"protocol": aws.ToString(e.Protocol),
-				// from_port/to_port/icmp_type/icmp_code are all Required within
-				// the ingress/egress object type (the schema doesn't mark them
-				// optional the way a plain top-level argument would be) -- AWS
-				// only returns PortRange/IcmpTypeCode when the protocol uses
-				// them, but the object literal still needs every key present,
-				// so the AWS/Terraform convention is 0 for "not applicable"
-				// rather than omitting the key.
+				// required in the object; 0 means not applicable
 				"from_port": int32(0),
 				"to_port":   int32(0),
 				"icmp_type": int32(0),
@@ -899,11 +821,7 @@ func fetchNetworkInsightsPath(ctx context.Context, c *Clients, r model.Resource)
 
 func hydrateKeyPair(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	id := r.ID
-	// public_key is Required, but DescribeKeyPairs only returns it when
-	// asked -- without IncludePublicKey, this came back empty (invalid
-	// config, "public_key is required") for every AWS-generated key pair;
-	// only imported ones happened to still work, since AWS always retains
-	// an imported key's public material regardless of this flag.
+	// public_key needs IncludePublicKey
 	out, err := ec2.NewFromConfig(c.Cfg(r.Region)).DescribeKeyPairs(ctx, &ec2.DescribeKeyPairsInput{
 		KeyPairIds:       []string{id},
 		IncludePublicKey: aws.Bool(true),
@@ -1061,9 +979,7 @@ func hydrateVPCPeering(ctx context.Context, c *Clients, r model.Resource) (map[s
 	cfg := map[string]any{}
 	if p.RequesterVpcInfo != nil {
 		cfg["vpc_id"] = aws.ToString(p.RequesterVpcInfo.VpcId)
-		// the most commonly customized peering setting (cross-VPC private
-		// DNS resolution) is nested under {Requester,Accepter}VpcInfo, not a
-		// top-level attribute.
+		// private DNS options live under VpcInfo
 		if po := p.RequesterVpcInfo.PeeringOptions; po != nil {
 			cfg["requester"] = map[string]any{"allow_remote_vpc_dns_resolution": aws.ToBool(po.AllowDnsResolutionFromRemoteVpc)}
 		}
@@ -1106,8 +1022,7 @@ func hydrateNetworkInterface(ctx context.Context, c *Clients, r model.Resource) 
 		return nil, fmt.Errorf("not found")
 	}
 	ni := out.NetworkInterfaces[0]
-	// Interfaces AWS creates for a managed service (their InterfaceType is not
-	// "interface", or they have a requester-managed flag) are not user-managed.
+	// AWS-managed interfaces aren't user resources.
 	if string(ni.InterfaceType) != "" && string(ni.InterfaceType) != "interface" {
 		return nil, fmt.Errorf("service-managed interface (%s)", ni.InterfaceType)
 	}
@@ -1145,9 +1060,7 @@ func hydrateNetworkInterface(ctx context.Context, c *Clients, r model.Resource) 
 	if ni.SourceDestCheck != nil {
 		cfg["source_dest_check"] = *ni.SourceDestCheck
 	}
-	// only a real instance attachment is a settable argument; ELB/NAT-gateway/
-	// VPC-endpoint owned interfaces attach through their own owning resource,
-	// not this one, and never carry an InstanceId here.
+	// only instance attachments are settable here
 	if at := ni.Attachment; at != nil && aws.ToString(at.InstanceId) != "" {
 		cfg["attachment"] = []any{map[string]any{
 			"instance":     aws.ToString(at.InstanceId),
@@ -1245,11 +1158,7 @@ func hydrateNetworkFirewall(ctx context.Context, c *Clients, r model.Resource) (
 	return cfg, nil
 }
 
-// dhcpOptionConfig maps DescribeDhcpOptions' key-value list shape
-// (DhcpConfigurations: [{Key: "domain-name", Values: [{Value: "x"}]}, ...])
-// onto the schema's flat attribute names. Generic() can't do this on its
-// own -- there is no top-level "domain_name" key in the API response at
-// all, just an opaque list of key/value pairs.
+// DHCP key/value pairs onto flat attributes.
 var dhcpOptionKeys = map[string]string{
 	"domain-name":                       "domain_name",
 	"domain-name-servers":               "domain_name_servers",

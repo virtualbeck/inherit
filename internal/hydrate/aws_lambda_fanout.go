@@ -42,8 +42,6 @@ func hydrateLambdaCodeSigningConfig(ctx context.Context, c *Clients, r model.Res
 	return cfg, nil
 }
 
-// fanoutLambda emits the event-source mappings and aliases of a function as
-// their own resources.
 func fanoutLambda(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	cl := lambda.NewFromConfig(c.Cfg(parent.Region))
 	fn := parent.ID
@@ -54,16 +52,7 @@ func fanoutLambda(ctx context.Context, c *Clients, parent model.Resource) ([]mod
 		for _, m := range esm.EventSourceMappings {
 			var cfg map[string]any
 			if serr == nil {
-				// Generic() over the whole struct instead of a hand-picked
-				// subset: this resource has ~20 real, independently
-				// configurable attributes (filter_criteria, destination_config
-				// for on-failure DLQ routing, scaling/provisioned-poller
-				// config, retry/batching tuning, the msk/mq/kafka/documentdb
-				// source-specific blocks, ...). function_arn is Computed-only
-				// in the schema (function_name is the real Required arg), so
-				// it's overridden to land there instead of being pruned away
-				// -- GetEventSourceMappingConfiguration never returns a
-				// separate bare function name, only the ARN.
+				// function_arn lands in function_name
 				cfg, _ = Generic(m, sch, map[string]string{"function_arn": "function_name"})
 			}
 			if cfg == nil {
@@ -72,16 +61,10 @@ func fanoutLambda(ctx context.Context, c *Clients, parent model.Resource) ([]mod
 					"event_source_arn": aws.ToString(m.EventSourceArn),
 				}
 			}
-			// state is Computed-only (enabled is the real settable arg) and
-			// isn't a simple case-conversion of it -- "Enabled" maps to
-			// true, everything else (Disabled, Creating, Updating,
-			// transitional states) to false.
+			// only Enabled means true
 			cfg["enabled"] = aws.ToString(m.State) == "Enabled"
 			fixSelfManagedEndpoints(cfg)
-			// Lambda tags this resource via the generic ARN-keyed ListTags
-			// API, same as the function itself -- ListEventSourceMappings/
-			// GetEventSourceMappingConfiguration never return tags in the
-			// mapping's own response.
+			// tags come from ListTags, not the mapping
 			var tags map[string]string
 			if esmARN := aws.ToString(m.EventSourceMappingArn); esmARN != "" {
 				if lt, err := cl.ListTags(ctx, &lambda.ListTagsInput{Resource: &esmARN}); err == nil && len(lt.Tags) > 0 {
@@ -111,8 +94,6 @@ func fanoutLambda(ctx context.Context, c *Clients, parent model.Resource) ([]mod
 			if v := aws.ToString(a.Description); v != "" {
 				cfg["description"] = v
 			}
-			// weighted/canary alias routing -- a real, fairly common
-			// traffic-shifting feature (gradual deploys).
 			if rc := a.RoutingConfig; rc != nil && len(rc.AdditionalVersionWeights) > 0 {
 				weights := make(map[string]any, len(rc.AdditionalVersionWeights))
 				for version, weight := range rc.AdditionalVersionWeights {
@@ -134,12 +115,7 @@ func fanoutLambda(ctx context.Context, c *Clients, parent model.Resource) ([]mod
 		for _, u := range urls.FunctionUrlConfigs {
 			var cfg map[string]any
 			if serr == nil {
-				// AuthType doesn't snake-case to the schema's Required
-				// "authorization_type" (an override, not an acronym-mangling
-				// issue) -- Generic() still returns a non-nil cfg without
-				// it, silently missing the field entirely rather than
-				// falling back to anything. Confirmed by a real "Missing
-				// required argument" tofu validate failure, not assumed.
+				// AuthType maps to authorization_type
 				cfg, _ = Generic(u, sch, map[string]string{"function_arn": "function_name", "auth_type": "authorization_type"})
 			}
 			if cfg == nil {
@@ -150,17 +126,7 @@ func fanoutLambda(ctx context.Context, c *Clients, parent model.Resource) ([]mod
 			id := fn
 			if q := lambdaArnQualifier(aws.ToString(u.FunctionArn), fn); q != "" {
 				cfg["qualifier"] = q
-				// "/"-joined, not ":" -- confirmed against the real
-				// provider's own functionURLResourceIDSeparator (unlike
-				// function_event_invoke_config just below, which really
-				// is ":"-joined). Using the wrong separator here doesn't
-				// error at import time -- it silently parses as a single,
-				// unqualified function_name and leaves qualifier empty,
-				// surfacing only as a forced replacement on the very next
-				// plan. Confirmed by a real tofu plan showing exactly that
-				// (function_name coming back as the combined "name:live"
-				// string, qualifier absent), not assumed from reading the
-				// source alone.
+				// "/" separator; ":" silently drops the qualifier
 				id = fn + "/" + q
 			}
 			kids = append(kids, model.Resource{
@@ -203,9 +169,7 @@ func fanoutLambda(ctx context.Context, c *Clients, parent model.Resource) ([]mod
 			if q == "" {
 				continue
 			}
-			// ","-joined -- this type goes through the provider's shared
-			// flex.FlattenResourceId helper (ResourceIdSeparator = ","),
-			// not the ":" convention several sibling Lambda types use.
+			// "," separator, via FlattenResourceId
 			id := fn + "," + q
 			kids = append(kids, model.Resource{
 				Service: "lambda", Type: "provisioned-concurrency-config", TFType: "aws_lambda_provisioned_concurrency_config",
@@ -235,9 +199,7 @@ func fanoutLambda(ctx context.Context, c *Clients, parent model.Resource) ([]mod
 	return kids, nil
 }
 
-// lambdaArnQualifier returns the version/alias suffix on a qualified Lambda
-// ARN ("...function:name:1" / "...function:name:LIVE"), or "" for a bare,
-// unqualified function ARN ("...function:name").
+// lambdaArnQualifier returns a qualified ARN's suffix, or "".
 func lambdaArnQualifier(arn, functionName string) string {
 	suffix := ":" + functionName + ":"
 	if _, after, ok := strings.Cut(arn, suffix); ok {
@@ -246,13 +208,7 @@ func lambdaArnQualifier(arn, functionName string) string {
 	return ""
 }
 
-// fixSelfManagedEndpoints repairs self_managed_event_source.endpoints in
-// place: map(string) in the schema (one comma-joined string of bootstrap
-// servers per key, per AWS's own docs), but GetEventSourceMappingConfiguration
-// returns map[string][]string. Generic()'s IsMap() handling passes a
-// map-typed value through untouched on the assumption the SDK shape already
-// matches the schema's -- it doesn't here, so left alone this would emit a
-// map of string-lists where the provider expects a map of plain strings.
+// endpoints arrive as lists; schema wants joined strings.
 func fixSelfManagedEndpoints(cfg map[string]any) {
 	sms, ok := cfg["self_managed_event_source"].([]any)
 	if !ok || len(sms) != 1 {

@@ -12,7 +12,6 @@ func init() {
 	registerFanout("aws_eks_cluster", fanoutEKS)
 }
 
-// fanoutEKS expands a cluster into its node groups, Fargate profiles and addons.
 func fanoutEKS(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	cl := eks.NewFromConfig(c.Cfg(parent.Region))
 	name := parent.ID
@@ -189,10 +188,7 @@ func fanoutEKS(ctx context.Context, c *Clients, parent model.Resource) ([]model.
 			if len(d.Addon.Tags) > 0 {
 				cfg["tags"] = d.Addon.Tags
 			}
-			// PodIdentityAssociations on the addon is just a list of bare
-			// association IDs -- DescribePodIdentityAssociation per id is
-			// the only way to get the actual service_account/role_arn the
-			// schema needs.
+			// IDs only; describe each for details
 			var pias []any
 			for _, assocID := range d.Addon.PodIdentityAssociations {
 				pd, perr := cl.DescribePodIdentityAssociation(ctx, &eks.DescribePodIdentityAssociationInput{

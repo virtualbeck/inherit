@@ -2,7 +2,7 @@ package emit
 
 import "regexp"
 
-// category groups resource types into modules. First match wins.
+// First match wins.
 var categoryRules = []struct {
 	re  *regexp.Regexp
 	cat string

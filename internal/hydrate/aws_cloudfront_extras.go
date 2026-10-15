@@ -15,13 +15,7 @@ func init() {
 	register("aws_cloudfront_function", hydrateCloudFrontFunction)
 }
 
-// gapFillCloudFrontExtras discovers the CloudFront primitives that have no
-// ARN/tagging concept at all in this schema version (origin access
-// controls/identities, cache/origin-request/response-headers policies,
-// public keys, key groups) -- account-wide, global-service lists.
-// aws_cloudfront_function is the one type here that IS ARN-taggable
-// (arn:aws:cloudfront::account:function/name), so it's registered normally
-// via arnToTF/register() below instead of gap-filled.
+// Untaggable CloudFront primitives, listed account-wide.
 func gapFillCloudFrontExtras(ctx context.Context, c *Clients, _ string) ([]model.Resource, error) {
 	cl := cloudfront.NewFromConfig(c.Cfg("us-east-1"))
 	var out []model.Resource

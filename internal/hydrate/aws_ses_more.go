@@ -14,15 +14,7 @@ func init() {
 	registerFanout("aws_sesv2_email_identity", fanoutSESv2IdentityPolicies)
 }
 
-// gapFillSESReceiptRuleSets discovers SES v1 receipt rule sets:
-// ListReceiptRuleSets, account/region-scoped with no ARN or tagging concept
-// at all (no tag-related API exists anywhere in the SES v1 SDK for this
-// type). This is genuinely v1-only: SESv2 replaced receipt rule sets with a
-// different mechanism, so unlike domain_identity/configuration_set (whose
-// v1 ARNs collide with the already-registered aws_sesv2_email_identity/
-// aws_sesv2_configuration_set on the exact same real AWS object --
-// deliberately not added here, since that would emit two Terraform
-// resources for one thing), there's no v2 equivalent to prefer instead.
+// v1-only receipt rule sets; no ARN or tags.
 func gapFillSESReceiptRuleSets(ctx context.Context, c *Clients, region string) ([]model.Resource, error) {
 	cl := ses.NewFromConfig(c.Cfg(region))
 	var out []model.Resource
@@ -51,8 +43,6 @@ func gapFillSESReceiptRuleSets(ctx context.Context, c *Clients, region string) (
 	return out, nil
 }
 
-// fanoutSESv2IdentityPolicies expands an email identity into its attached
-// authorization policies, a separate top-level resource in the provider.
 func fanoutSESv2IdentityPolicies(ctx context.Context, c *Clients, parent model.Resource) ([]model.Resource, error) {
 	cl := sesv2.NewFromConfig(c.Cfg(parent.Region))
 	identity := parent.ID

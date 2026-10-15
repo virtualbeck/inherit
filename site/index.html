@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>inherit: AWS account to OpenTofu</title>
+<meta name="description" content="Turn a hand-built AWS account into a working OpenTofu/Terraform project. One open-source binary, read-only, runs on your machine.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23d97706'/%3E%3Cpath d='M5 4v8M8 4v8M11 4v8' stroke='white' stroke-width='1.6'/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #fbfaf8; --fg: #1c1b19; --muted: #5f5b54; --line: #e4e0d8;
+  --code-bg: #f1eee8; --term-bg: #1c1b19; --term-fg: #e8e4dc; --term-dim: #9a958c;
+  --accent: #b45309; --ok: #4d7c0f;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141311; --fg: #e8e4dc; --muted: #a39e95; --line: #2c2a26;
+    --code-bg: #1d1c19; --term-bg: #0d0c0b; --term-fg: #e8e4dc; --term-dim: #8a857c;
+    --accent: #f59e0b; --ok: #a3e635;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 17px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 760px; margin: 0 auto; padding: 56px 20px 40px; }
+h1 { font-size: 2.1rem; line-height: 1.2; margin: 0 0 12px; letter-spacing: -0.01em; }
+h1 .name { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: var(--accent); }
+h2 { font-size: 1.15rem; margin: 48px 0 12px; }
+p { margin: 0 0 14px; }
+.lede { font-size: 1.15rem; color: var(--muted); margin-bottom: 28px; }
+a { color: var(--accent); }
+code, pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.86rem; }
+:not(pre) > code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+pre { margin: 0 0 16px; padding: 14px 16px; border-radius: 8px; overflow-x: auto; line-height: 1.5; }
+pre.term { background: var(--term-bg); color: var(--term-fg); }
+pre.term .p { color: var(--term-dim); user-select: none; }
+pre.term .d { color: var(--term-dim); }
+pre.term .ok { color: var(--ok); }
+pre.hcl { background: var(--code-bg); border: 1px solid var(--line); }
+pre.hcl .c { color: var(--muted); }
+.file { font: 0.78rem ui-monospace, Menlo, Consolas, monospace; color: var(--muted); margin: 0 0 4px; }
+ul { padding-left: 20px; margin: 0 0 14px; }
+li { margin-bottom: 6px; }
+.links { display: flex; gap: 18px; flex-wrap: wrap; margin: 4px 0 0; }
+footer { max-width: 760px; margin: 0 auto; padding: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<main>
+
+<h1><span class="name">inherit</span>: turn a hand-built AWS account into a working OpenTofu project</h1>
+<p class="lede">One open-source binary. It runs on your machine, reads your account with read-only APIs, and writes a Terraform/OpenTofu project you can <code>plan</code> and <code>import</code>. Nothing is uploaded anywhere.</p>
+
+<pre class="term"><span class="p">$ </span>inherit scan --profile readonly
+<span class="d">discovering ... found 41 resources across 17 regions
+hydrating ...
+generating ... 25 resources across 3 modules, 34 import blocks</span>
+
+<span class="p">$ </span>inherit plan inherit-123456789012
+<span class="ok">Plan: 34 to import, 0 to add, 0 to change, 0 to destroy.</span>
+
+<span class="p">$ </span>inherit import --fast inherit-123456789012
+<span class="ok">No changes. Your infrastructure matches the configuration.</span></pre>
+
+<div class="links">
+  <a href="https://github.com/virtualbeck/inherit">GitHub</a>
+  <a href="#install">Install</a>
+</div>
+
+<h2>What you get</h2>
+<p>Real HCL, laid out as a root module calling one module per category. IDs that point at other discovered resources become references; anything outside the scan becomes a variable. Every resource gets an <code>import</code> block.</p>
+
+<p class="file">modules/network/main.tf</p>
+<pre class="hcl">resource "aws_security_group" "main" {
+  description = "ssh from the office"
+  name        = var.security_group_name
+  vpc_id      = aws_default_vpc.main.id
+}
+
+resource "aws_vpc_security_group_ingress_rule" "main" {
+  cidr_ipv4         = "198.51.100.42/32"
+  from_port         = 22
+  ip_protocol       = "tcp"
+  security_group_id = aws_security_group.main.id
+  to_port           = 22
+}</pre>
+
+<p class="file">main.tf</p>
+<pre class="hcl">module "compute" {
+  source          = "./modules/compute"
+  network_main_id = module.network.main_id  <span class="c"># cross-module wiring</span>
+  subnet_id       = "subnet-0fff5555666677778"
+}</pre>
+
+<p class="file">imports.tf</p>
+<pre class="hcl">import {
+  to = module.network.aws_security_group.main
+  id = "sg-0bbb22223333cccc2"
+}</pre>
+
+<h2>Read-only, local, auditable</h2>
+<ul>
+  <li>Every AWS request passes a <a href="https://github.com/virtualbeck/inherit/blob/main/internal/awsx/readonly.go">signing-time guard</a> that rejects anything but read operations before it leaves the process.</li>
+  <li>It runs on your machine with your credentials. No account, no telemetry, no upload.</li>
+  <li>Secrets (Lambda env vars, user data, plain SSM values) stay out of the <code>.tf</code> files: they land in a gitignored local file and the attributes go under <code>ignore_changes</code>.</li>
+  <li><code>import</code> only ever calls the provider's Read. <code>import --fast</code> applies a batch only after verifying its plan is nothing but no-op imports.</li>
+  <li>Apache-2.0. Go, one static binary.</li>
+</ul>
+
+<h2>Limits</h2>
+<ul>
+  <li>Covers 363 of the AWS provider's 1,735 resource types: the common ones first.</li>
+  <li>Lambda code can't be read back from AWS, so functions point at a placeholder zip.</li>
+  <li>A few provider-only settings show a one-time diff after import.</li>
+</ul>
+<p>Details, coverage and internals are in the <a href="https://github.com/virtualbeck/inherit">GitHub repo</a>.</p>
+
+<h2 id="install">Install</h2>
+<pre class="term"><span class="p">$ </span>curl -fsSL https://raw.githubusercontent.com/virtualbeck/inherit/main/install.sh | sh</pre>
+<p>Or <code>go install github.com/virtualbeck/inherit/cmd/inherit@latest</code>, or grab a binary from <a href="https://github.com/virtualbeck/inherit/releases">Releases</a> (Linux, macOS, Windows). <code>plan</code> and <code>import</code> need <a href="https://opentofu.org">OpenTofu</a> or Terraform.</p>
+
+</main>
+<footer>inherit is open source under Apache-2.0 · <a href="https://github.com/virtualbeck/inherit">github.com/virtualbeck/inherit</a></footer>
+</body>
+</html>

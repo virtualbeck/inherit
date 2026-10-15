@@ -221,6 +221,8 @@ make coverage    # regenerate docs/COVERAGE.md from the hydrator registry
 make schema      # re-bundle the latest hashicorp/aws 6.x provider schema
 ```
 
+The website is `site/index.html`, published by GitHub Pages on every change.
+
 Releases are cut by pushing a `v*` tag; the release workflow builds every
 platform and publishes the archives with `SHA256SUMS`.
 

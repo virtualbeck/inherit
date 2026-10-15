@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/virtualbeck/inherit/internal/emit"
+	"github.com/virtualbeck/inherit/internal/par"
 	"github.com/virtualbeck/inherit/internal/tf"
 )
 
@@ -165,9 +166,7 @@ func importOne(ctx context.Context, r *tf.Runner, addr, id string) (string, erro
 }
 
 func runImports(ctx context.Context, r *tf.Runner, specs []emit.ImportSpec, concurrency int) error {
-	if concurrency <= 0 {
-		concurrency = 1
-	}
+	concurrency = max(concurrency, 1)
 	have, _ := r.StateList(ctx)
 
 	var pending []emit.ImportSpec
@@ -183,32 +182,25 @@ func runImports(ctx context.Context, r *tf.Runner, specs []emit.ImportSpec, conc
 
 	var (
 		mu     sync.Mutex
-		wg     sync.WaitGroup
-		sem    = make(chan struct{}, concurrency)
 		done   int
 		failed int
 		n      int
 	)
-	for _, s := range pending {
-		sem <- struct{}{}
-		wg.Go(func() {
-			defer func() { <-sem }()
-			out, err := importOne(ctx, r, s.Addr, s.ID)
-			mu.Lock()
-			defer mu.Unlock()
-			n++
-			if err != nil {
-				failed++
-				fmt.Fprintf(os.Stderr, "  ! %s: %v\n%s\n", s.Addr, err, strings.TrimSpace(out))
-			} else {
-				done++
-			}
-			if n%25 == 0 || n == len(pending) {
-				fmt.Fprintf(os.Stderr, "  %d/%d done\n", n, len(pending))
-			}
-		})
-	}
-	wg.Wait()
+	par.Each(pending, concurrency, func(s emit.ImportSpec) {
+		out, err := importOne(ctx, r, s.Addr, s.ID)
+		mu.Lock()
+		defer mu.Unlock()
+		n++
+		if err != nil {
+			failed++
+			fmt.Fprintf(os.Stderr, "  ! %s: %v\n%s\n", s.Addr, err, strings.TrimSpace(out))
+		} else {
+			done++
+		}
+		if n%25 == 0 || n == len(pending) {
+			fmt.Fprintf(os.Stderr, "  %d/%d done\n", n, len(pending))
+		}
+	})
 	fmt.Fprintf(os.Stderr, "  imported %d, already in state %d, failed %d\n", done, skipped, failed)
 	return nil
 }

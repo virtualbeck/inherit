@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/virtualbeck/inherit/internal/par"
 	"github.com/virtualbeck/inherit/model"
 	"github.com/virtualbeck/inherit/tfschema"
 )
@@ -335,76 +336,68 @@ func Run(ctx context.Context, cfg aws.Config, inv *model.Inventory, opt Options)
 	clients := newClients(cfg)
 
 	st := Stats{NoHydrator: map[string]int{}, Unmapped: map[string]int{}}
-	var (
-		mu   sync.Mutex
-		wg   sync.WaitGroup
-		sem  = make(chan struct{}, opt.Concurrency)
-		done int
-	)
 
 	// gap-fillers discover + hydrate resource types the tagging API can't see
 	// (application auto scaling, ...); they arrive with TFType and Config set.
-	st.Errors = append(st.Errors, runGapFillers(ctx, clients, inv)...)
+	st.Errors = append(st.Errors, runGapFillers(ctx, clients, inv, opt.Concurrency)...)
 
+	type job struct {
+		r *model.Resource
+		h Hydrator
+	}
+	var jobs []job
 	for i := range inv.Resources {
 		r := &inv.Resources[i]
 		if r.Config != nil { // gap-filled already
 			continue
 		}
 		r.TFType = ResolveTFType(*r)
-
 		if r.TFType == "" {
-			key := r.Service + "." + r.Type
-			mu.Lock()
-			st.Unmapped[key]++
-			mu.Unlock()
+			st.Unmapped[r.Service+"."+r.Type]++
 			continue
 		}
 		h, ok := registry[r.TFType]
 		if !ok {
-			mu.Lock()
 			st.NoHydrator[r.TFType]++
-			mu.Unlock()
 			continue
 		}
+		jobs = append(jobs, job{r, h})
+	}
 
-		wg.Add(1)
-		sem <- struct{}{}
-		go func(r *model.Resource, h Hydrator) {
-			defer wg.Done()
-			defer func() { <-sem }()
-
-			if r.Region == "" {
-				if resolve, ok := regionResolvers[r.TFType]; ok {
-					if region, err := resolve(ctx, clients, *r); err == nil && region != "" {
-						r.Region = region
-					}
+	var (
+		mu   sync.Mutex
+		done int
+	)
+	par.Each(jobs, opt.Concurrency, func(j job) {
+		r := j.r
+		if r.Region == "" {
+			if resolve, ok := regionResolvers[r.TFType]; ok {
+				if region, err := resolve(ctx, clients, *r); err == nil && region != "" {
+					r.Region = region
 				}
 			}
+		}
 
-			cfgMap, err := h(ctx, clients, *r)
-			mu.Lock()
-			defer mu.Unlock()
-			done++
-			if opt.OnProgress != nil {
-				opt.OnProgress(done, len(inv.Resources))
-			}
-			if err != nil {
-				st.Errors = append(st.Errors, fmt.Errorf("%s %s: %w", r.TFType, r.ID, err))
-				return
-			}
-			if newType, ok := cfgMap[retypeSentinel].(string); ok {
-				delete(cfgMap, retypeSentinel)
-				r.TFType = newType
-			}
-			if len(r.Tags) > 0 {
-				cfgMap["tags"] = r.Tags
-			}
-			r.Config = cfgMap
-			st.Hydrated++
-		}(r, h)
-	}
-	wg.Wait()
+		cfgMap, err := j.h(ctx, clients, *r)
+		mu.Lock()
+		defer mu.Unlock()
+		done++
+		if opt.OnProgress != nil {
+			opt.OnProgress(done, len(inv.Resources))
+		}
+		if err != nil {
+			st.Errors = append(st.Errors, fmt.Errorf("%s %s: %w", r.TFType, r.ID, err))
+			return
+		}
+		if newType, ok := cfgMap[retypeSentinel].(string); ok {
+			delete(cfgMap, retypeSentinel)
+			r.TFType = newType
+		}
+		if len(r.Tags) > 0 {
+			cfgMap["tags"] = r.Tags
+		}
+		r.Config = cfgMap
+	})
 
 	// expand split resources (SG rules, ...) from the parents that hydrated,
 	// then recount so Hydrated reflects what will actually emit.

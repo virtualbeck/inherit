@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi"
 	rgttypes "github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi/types"
+	"github.com/virtualbeck/inherit/internal/par"
 	"github.com/virtualbeck/inherit/model"
 )
 
@@ -149,41 +150,27 @@ func Sweep(ctx context.Context, cfg aws.Config, opt Options) (model.Inventory, i
 		errs         []error
 		skipped      int
 		excludedHits int
-		sem          = make(chan struct{}, opt.Concurrency)
-		wg           sync.WaitGroup
 	)
-
-	for _, region := range opt.Regions {
-		wg.Add(1)
-		sem <- struct{}{}
-		go func() {
-			defer wg.Done()
-			defer func() { <-sem }()
-
-			res, err := sweepRegion(ctx, cfg, region)
-			kept, excludedInRegion := filterResources(res, allow, excludedServices, excludedTypes, opt.IncludeEphemeral)
-			if opt.OnRegion != nil {
-				opt.OnRegion(region, len(kept), err)
-			}
-			mu.Lock()
-			defer mu.Unlock()
-			if err != nil {
-				errs = append(errs, fmt.Errorf("%s: %w", region, err))
-				return
-			}
-			excludedHits += excludedInRegion
-			skipped += len(res) - excludedInRegion - len(kept)
-			for _, r := range kept {
-				if existing, ok := byARN[r.ARN]; ok {
-					// global resource seen from a second region - keep the first
-					_ = existing
-					continue
-				}
+	par.Each(opt.Regions, opt.Concurrency, func(region string) {
+		res, err := sweepRegion(ctx, cfg, region)
+		kept, excludedInRegion := filterResources(res, allow, excludedServices, excludedTypes, opt.IncludeEphemeral)
+		if opt.OnRegion != nil {
+			opt.OnRegion(region, len(kept), err)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", region, err))
+			return
+		}
+		excludedHits += excludedInRegion
+		skipped += len(res) - excludedInRegion - len(kept)
+		for _, r := range kept {
+			if _, ok := byARN[r.ARN]; !ok { // a global resource seen from a second region keeps the first
 				byARN[r.ARN] = r
 			}
-		}()
-	}
-	wg.Wait()
+		}
+	})
 
 	inv := model.Inventory{
 		Account:   opt.Account,

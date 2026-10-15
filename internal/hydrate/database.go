@@ -947,6 +947,21 @@ func hydrateDBParamGroup(ctx context.Context, c *Clients, r model.Resource) (map
 	return cfg, nil
 }
 
+// userParam renders one engine parameter for a `parameter` block, or reports
+// false unless it was set explicitly: the provider's Read only surfaces
+// Source "user" parameters, never the engine defaults. Pass "" for engines
+// whose parameter block has no apply_method (ElastiCache, Redshift).
+func userParam(source, name, value *string, applyMethod string) (map[string]any, bool) {
+	if aws.ToString(source) != "user" {
+		return nil, false
+	}
+	m := map[string]any{"name": aws.ToString(name), "value": aws.ToString(value)}
+	if applyMethod != "" {
+		m["apply_method"] = applyMethod
+	}
+	return m, true
+}
+
 func dbParamGroupParams(ctx context.Context, cl *rds.Client, name string) []any {
 	var out []any
 	p := rds.NewDescribeDBParametersPaginator(cl, &rds.DescribeDBParametersInput{DBParameterGroupName: &name})
@@ -956,14 +971,9 @@ func dbParamGroupParams(ctx context.Context, cl *rds.Client, name string) []any 
 			break
 		}
 		for _, prm := range page.Parameters {
-			if aws.ToString(prm.Source) != "user" {
-				continue
+			if m, ok := userParam(prm.Source, prm.ParameterName, prm.ParameterValue, string(prm.ApplyMethod)); ok {
+				out = append(out, m)
 			}
-			m := map[string]any{"name": aws.ToString(prm.ParameterName), "value": aws.ToString(prm.ParameterValue)}
-			if v := string(prm.ApplyMethod); v != "" {
-				m["apply_method"] = v
-			}
-			out = append(out, m)
 		}
 	}
 	return out
@@ -1032,14 +1042,9 @@ func hydrateNeptuneClusterParamGroup(ctx context.Context, c *Clients, r model.Re
 			break
 		}
 		for _, prm := range page.Parameters {
-			if aws.ToString(prm.Source) != "user" {
-				continue
+			if m, ok := userParam(prm.Source, prm.ParameterName, prm.ParameterValue, string(prm.ApplyMethod)); ok {
+				params = append(params, m)
 			}
-			m := map[string]any{"name": aws.ToString(prm.ParameterName), "value": aws.ToString(prm.ParameterValue)}
-			if v := string(prm.ApplyMethod); v != "" {
-				m["apply_method"] = v
-			}
-			params = append(params, m)
 		}
 	}
 	if len(params) > 0 {
@@ -1057,14 +1062,9 @@ func dbClusterParamGroupParams(ctx context.Context, cl *rds.Client, name string)
 			break
 		}
 		for _, prm := range page.Parameters {
-			if aws.ToString(prm.Source) != "user" {
-				continue
+			if m, ok := userParam(prm.Source, prm.ParameterName, prm.ParameterValue, string(prm.ApplyMethod)); ok {
+				out = append(out, m)
 			}
-			m := map[string]any{"name": aws.ToString(prm.ParameterName), "value": aws.ToString(prm.ParameterValue)}
-			if v := string(prm.ApplyMethod); v != "" {
-				m["apply_method"] = v
-			}
-			out = append(out, m)
 		}
 	}
 	return out
@@ -1183,10 +1183,9 @@ func cacheParamGroupParams(ctx context.Context, cl *elasticache.Client, name str
 			break
 		}
 		for _, prm := range page.Parameters {
-			if aws.ToString(prm.Source) != "user" {
-				continue
+			if m, ok := userParam(prm.Source, prm.ParameterName, prm.ParameterValue, ""); ok {
+				out = append(out, m)
 			}
-			out = append(out, map[string]any{"name": aws.ToString(prm.ParameterName), "value": aws.ToString(prm.ParameterValue)})
 		}
 	}
 	return out

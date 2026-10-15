@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/virtualbeck/inherit/internal/par"
 	"github.com/virtualbeck/inherit/model"
 )
 
@@ -31,40 +32,39 @@ func registerGlobalGapFiller(f GapFiller) { globalGapFillers = append(globalGapF
 // runGapFillers runs every registered gap-filler across the inventory's regions
 // (each global filler exactly once, using the first scanned region only to
 // build a client -- the call itself is region-agnostic) and appends what they
-// find. Concurrent over (region x filler).
-func runGapFillers(ctx context.Context, c *Clients, inv *model.Inventory) []error {
-	if len(gapFillers) == 0 && len(globalGapFillers) == 0 {
-		return nil
+// find. Concurrent over (region x filler), at most concurrency at a time.
+func runGapFillers(ctx context.Context, c *Clients, inv *model.Inventory, concurrency int) []error {
+	type job struct {
+		region string
+		f      GapFiller
 	}
-	var (
-		mu   sync.Mutex
-		wg   sync.WaitGroup
-		errs []error
-		add  []model.Resource
-	)
-	run := func(region string, f GapFiller) {
-		wg.Go(func() {
-			res, err := f(ctx, c, region)
-			mu.Lock()
-			defer mu.Unlock()
-			if err != nil {
-				errs = append(errs, fmt.Errorf("gapfill %s: %w", region, err))
-				return
-			}
-			add = append(add, res...)
-		})
-	}
+	var jobs []job
 	for _, region := range inv.Regions {
 		for _, f := range gapFillers {
-			run(region, f)
+			jobs = append(jobs, job{region, f})
 		}
 	}
 	if len(inv.Regions) > 0 {
 		for _, f := range globalGapFillers {
-			run(inv.Regions[0], f)
+			jobs = append(jobs, job{inv.Regions[0], f})
 		}
 	}
-	wg.Wait()
+
+	var (
+		mu   sync.Mutex
+		errs []error
+		add  []model.Resource
+	)
+	par.Each(jobs, concurrency, func(j job) {
+		res, err := j.f(ctx, c, j.region)
+		mu.Lock()
+		defer mu.Unlock()
+		if err != nil {
+			errs = append(errs, fmt.Errorf("gapfill %s: %w", j.region, err))
+			return
+		}
+		add = append(add, res...)
+	})
 	inv.Resources = append(inv.Resources, add...)
 	return errs
 }

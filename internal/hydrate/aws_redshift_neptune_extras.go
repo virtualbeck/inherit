@@ -47,13 +47,10 @@ func hydrateRedshiftParamGroup(ctx context.Context, c *Clients, r model.Resource
 			break
 		}
 		for _, prm := range page.Parameters {
-			if aws.ToString(prm.Source) != "user" {
-				continue
+			// the redshift parameter block has no apply_method
+			if m, ok := userParam(prm.Source, prm.ParameterName, prm.ParameterValue, ""); ok {
+				params = append(params, m)
 			}
-			params = append(params, map[string]any{
-				"name":  aws.ToString(prm.ParameterName),
-				"value": aws.ToString(prm.ParameterValue),
-			})
 		}
 		if page.Marker == nil || aws.ToString(page.Marker) == "" {
 			break

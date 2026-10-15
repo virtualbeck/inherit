@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/virtualbeck/inherit/internal/par"
 	"github.com/virtualbeck/inherit/model"
 )
 
@@ -27,41 +28,31 @@ func runFanout(ctx context.Context, c *Clients, inv *model.Inventory, concurrenc
 	if concurrency <= 0 {
 		concurrency = 16
 	}
-	type job struct{ r model.Resource }
-	var jobs []job
+	var parents []model.Resource
 	for _, r := range inv.Resources {
 		if r.Config == nil {
 			continue
 		}
 		if _, ok := fanoutRegistry[r.TFType]; ok {
-			jobs = append(jobs, job{r})
+			parents = append(parents, r)
 		}
 	}
 
 	var (
 		mu       sync.Mutex
-		wg       sync.WaitGroup
-		sem      = make(chan struct{}, concurrency)
 		children []model.Resource
 		errs     []error
 	)
-	for _, j := range jobs {
-		wg.Add(1)
-		sem <- struct{}{}
-		go func() {
-			defer wg.Done()
-			defer func() { <-sem }()
-			kids, err := fanoutRegistry[j.r.TFType](ctx, c, j.r)
-			mu.Lock()
-			defer mu.Unlock()
-			if err != nil {
-				errs = append(errs, err)
-				return
-			}
-			children = append(children, kids...)
-		}()
-	}
-	wg.Wait()
+	par.Each(parents, concurrency, func(r model.Resource) {
+		kids, err := fanoutRegistry[r.TFType](ctx, c, r)
+		mu.Lock()
+		defer mu.Unlock()
+		if err != nil {
+			errs = append(errs, err)
+			return
+		}
+		children = append(children, kids...)
+	})
 	inv.Resources = append(inv.Resources, children...)
 	return errs
 }

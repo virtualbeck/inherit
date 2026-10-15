@@ -44,14 +44,19 @@ pre.hcl .c { color: var(--muted); }
 ul { padding-left: 20px; margin: 0 0 14px; }
 li { margin-bottom: 6px; }
 .links { display: flex; gap: 18px; flex-wrap: wrap; margin: 4px 0 0; }
-footer { padding: 20px clamp(20px, 5vw, 72px); border-top: 1px solid var(--line); color: var(--muted); font-size: 0.9rem; }
+footer { padding: 20px clamp(20px, 5vw, 72px); border-top: 1px solid var(--line); color: var(--muted); font-size: 0.9rem; display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; justify-content: space-between; }
+footer img { display: block; height: 20px; width: auto; }
+.gh { position: absolute; top: 20px; right: clamp(20px, 5vw, 72px); color: var(--fg); line-height: 0; }
+.gh:hover { color: var(--accent); }
+.gh svg { width: 32px; height: 32px; fill: currentColor; }
 </style>
 </head>
 <body>
+<a class="gh" href="https://github.com/virtualbeck/inherit" aria-label="inherit on GitHub" title="inherit on GitHub"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.25-.6-.86-1.23-.85-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg></a>
 <main>
 
 <h1>inherit</h1>
-<p class="tagline">Hand-built AWS account in, OpenTofu project out.</p>
+<p class="tagline">Inherited an AWS account that isn't infrastructure-as-code? Start here.</p>
 <p class="lede">One open-source binary. It runs on your machine, reads your account with read-only APIs, and writes a Terraform/OpenTofu project you can <code>plan</code> and <code>import</code>. Nothing is uploaded anywhere.</p>
 
 <pre class="term"><span class="p">$ </span>inherit scan --profile readonly
@@ -123,6 +128,9 @@ resource "aws_vpc_security_group_ingress_rule" "main" {
 <p>Or <code>go install github.com/virtualbeck/inherit/cmd/inherit@latest</code>, or grab a binary from <a href="https://github.com/virtualbeck/inherit/releases">Releases</a> (Linux, macOS, Windows). <code>plan</code> and <code>import</code> need <a href="https://opentofu.org">OpenTofu</a> or Terraform.</p>
 
 </main>
-<footer>inherit is open source under Apache-2.0 · <a href="https://github.com/virtualbeck/inherit">github.com/virtualbeck/inherit</a></footer>
+<footer>
+  <span>inherit is open source under Apache-2.0 · <a href="https://github.com/virtualbeck/inherit">github.com/virtualbeck/inherit</a></span>
+  <img src="https://visitor-badge.laobi.icu/badge?page_id=inherit.virtualbeck.com&amp;left_text=views&amp;left_color=%235f5b54&amp;right_color=%23b45309" alt="page views" height="20">
+</footer>
 </body>
 </html>

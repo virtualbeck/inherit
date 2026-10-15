@@ -32,7 +32,9 @@ re-runs `emit` from it offline.
   provider's `Read`. `import --fast` (`internal/cli/fastimport.go`) pins every
   resource to `ignore_changes = all`, plans each batch to a file, requires
   every resulting change to be exactly a no-op import, and only then applies
-  that saved plan; otherwise the batch falls back to classic import.
+  that saved plan. Batches start at up to 200 resources; one that fails is
+  halved and retried (`fastBatches`), and only a batch of 8 or fewer that
+  still fails falls back to classic import.
 - **Interrupts clean up.** Ctrl-C/SIGTERM cancel the root context
   (`internal/cli/root.go`) instead of killing the process, so the override
   files are always removed. `internal/tf` runs tofu in its own process group

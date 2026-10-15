@@ -26,7 +26,15 @@ const (
 	// included, so parallel imports mostly queue on the lock: a few overlap
 	// process startup, more only add lock contention and provider memory.
 	importConcurrency = 4
-	fastImportChunk   = 40
+
+	// fastImportChunk is the largest import --fast batch. Each batch costs
+	// three tofu runs over the whole project, so bigger is faster; 200
+	// targets also keeps the -target list well under Windows' 32K-character
+	// command line.
+	fastImportChunk = 200
+	// fastImportMinBatch: a failing batch is halved until it's this small,
+	// then its resources go to classic import.
+	fastImportMinBatch = 8
 )
 
 func planCmd() *cobra.Command {
@@ -57,7 +65,8 @@ func importCmd() *cobra.Command {
 			"--fast: batches imports through native import blocks + apply, far faster on\n" +
 			"large accounts. Every batch is pinned to `ignore_changes = all`, planned to a\n" +
 			"file, and applied only if that plan is verified to contain nothing but no-op\n" +
-			"imports; a batch that fails either check falls back to classic import.",
+			"imports; a batch that fails either check is split in half and retried, and\n" +
+			"only small batches that still fail fall back to classic import.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			mode := "import"

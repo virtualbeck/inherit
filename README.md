@@ -190,9 +190,10 @@ It's gitignored; treat it as sensitive.
    to `lifecycle { ignore_changes = all }` via a transient override file, (b)
    plans the batch to a file, (c) requires every change in that plan,
    dependencies included, to be exactly a no-op import, and only then (d)
-   applies that exact saved plan. A batch that fails falls back to classic
-   import. The override files are removed when the run ends, success or
-   failure.
+   applies that exact saved plan. Batches hold up to 200 resources; a batch
+   that fails is split in half and retried, so one problem resource only
+   sends a handful of its neighbours to classic import. The override files
+   are removed when the run ends, success or failure.
 
 More detail on the internals: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 

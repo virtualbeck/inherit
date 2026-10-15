@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/virtualbeck/inherit/internal/emit"
@@ -69,10 +70,13 @@ func verifyImportOnlyPlan(planJSON []byte) (bool, string) {
 //  4. Only a chunk that passes step 3 gets applied, and only the exact
 //     saved plan from step 2 -- nothing is re-planned at apply time.
 //
-// A chunk that fails at any step (plan errors -- e.g. a resource's import
-// target no longer exists -- or fails verification) falls back to the slow
-// but unconditionally-safe classic per-resource import (runImports) for
-// just that chunk's resources, not the whole run.
+// Batches start large (each costs three tofu runs that reload the whole
+// project and state, ~6s even on a small account), and a batch that fails at
+// any step (plan errors -- e.g. a resource's import target no longer exists
+// -- or fails verification) is split in half and retried, down to
+// fastImportMinBatch; what still fails falls back to the slow but
+// unconditionally-safe classic per-resource import (runImports) for just
+// those resources, not the whole run. See fastBatches.
 func runFastImport(ctx context.Context, r *tf.Runner, absOut string, imports []emit.ImportSpec, chunkSize, classicConcurrency int) error {
 	if chunkSize <= 0 {
 		chunkSize = len(imports)
@@ -103,31 +107,16 @@ func runFastImport(ctx context.Context, r *tf.Runner, absOut string, imports []e
 	}
 	defer func() { _ = os.RemoveAll(planDir) }()
 
-	fmt.Fprintf(os.Stderr, "%s fast-import (%d resources, %d already in state, chunks of %d)\n",
+	fmt.Fprintf(os.Stderr, "%s fast-import (%d resources, %d already in state, batches of up to %d)\n",
 		r.Name(), len(pending), skipped, chunkSize)
 
-	var fallback []emit.ImportSpec
-	fastDone := 0
-
-	for i := 0; i < len(pending); i += chunkSize {
-		if ctx.Err() != nil {
-			return ctx.Err() // interrupted: the deferred cleanup removes the overrides
-		}
-		end := min(i+chunkSize, len(pending))
-		chunk := pending[i:end]
-		label := fmt.Sprintf("%d-%d/%d", i+1, end, len(pending))
-
-		n, err := applyChunk(ctx, r, planDir, i/chunkSize, chunk)
-		if err != nil && ctx.Err() != nil {
-			return ctx.Err() // interrupted mid-chunk: not a fallback case
-		}
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "  ! chunk %s: %v -- falling back to classic import for this chunk\n", label, err)
-			fallback = append(fallback, chunk...)
-			continue
-		}
-		fastDone += n
-		fmt.Fprintf(os.Stderr, "  chunk %s: imported %d\n", label, n)
+	seq := 0
+	fastDone, fallback, err := fastBatches(ctx, pending, chunkSize, fastImportMinBatch, func(batch []emit.ImportSpec) (int, error) {
+		seq++
+		return applyChunk(ctx, r, planDir, seq, batch)
+	})
+	if err != nil {
+		return err // interrupted: the deferred cleanup removes the overrides
 	}
 
 	var fallbackErr error
@@ -138,6 +127,41 @@ func runFastImport(ctx context.Context, r *tf.Runner, absOut string, imports []e
 
 	fmt.Fprintf(os.Stderr, "  fast-imported %d, already in state %d, fell back to classic import %d\n", fastDone, skipped, len(fallback))
 	return fallbackErr
+}
+
+// fastBatches feeds pending through apply in batches of at most maxBatch,
+// in order. A batch that fails is halved and both halves retried right away,
+// until a failing batch is no larger than minBatch; those resources are
+// returned for classic import. In the common case (everything importable)
+// that's ceil(n/maxBatch) applies; one bad resource costs about log2(maxBatch)
+// extra plans, not a classic import of its whole batch. Stops with ctx's
+// error once ctx is cancelled.
+func fastBatches(ctx context.Context, pending []emit.ImportSpec, maxBatch, minBatch int, apply func([]emit.ImportSpec) (int, error)) (done int, fallback []emit.ImportSpec, err error) {
+	queue := slices.Collect(slices.Chunk(pending, max(maxBatch, 1)))
+	for len(queue) > 0 {
+		if ctx.Err() != nil {
+			return done, fallback, ctx.Err()
+		}
+		batch := queue[0]
+		queue = queue[1:]
+
+		n, err := apply(batch)
+		switch {
+		case err == nil:
+			done += n
+			fmt.Fprintf(os.Stderr, "  imported %d (%d/%d)\n", n, done, len(pending))
+		case ctx.Err() != nil:
+			return done, fallback, ctx.Err() // interrupted mid-batch: not a failure
+		case len(batch) > minBatch:
+			fmt.Fprintf(os.Stderr, "  ! batch of %d: %v -- splitting\n", len(batch), err)
+			mid := len(batch) / 2
+			queue = append([][]emit.ImportSpec{batch[:mid], batch[mid:]}, queue...)
+		default:
+			fmt.Fprintf(os.Stderr, "  ! batch of %d: %v -- falling back to classic import\n", len(batch), err)
+			fallback = append(fallback, batch...)
+		}
+	}
+	return done, fallback, nil
 }
 
 // applyChunk runs the plan -> verify -> apply sequence for one chunk. On any

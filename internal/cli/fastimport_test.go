@@ -2,9 +2,12 @@ package cli
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -189,5 +192,52 @@ resource "local_file" "ghost" {
 	}
 	if have["module.network.local_file.ghost"] {
 		t.Error("resource ended up in state despite never being importable")
+	}
+}
+
+// fastBatches: all-good input takes ceil(n/max) applies; one bad resource is
+// isolated by halving, so only a batch of at most minBatch around it goes to
+// classic import, and everything else still imports fast, in order.
+func TestFastBatchesSplitsAroundFailures(t *testing.T) {
+	specs := make([]emit.ImportSpec, 100)
+	for i := range specs {
+		specs[i] = emit.ImportSpec{Addr: fmt.Sprintf("module.m.t.r%d", i)}
+	}
+	var calls int
+	applyAll := func(b []emit.ImportSpec) (int, error) { calls++; return len(b), nil }
+	done, fb, err := fastBatches(context.Background(), specs, 40, 8, applyAll)
+	if err != nil || done != 100 || len(fb) != 0 || calls != 3 {
+		t.Fatalf("all good: done=%d fallback=%d calls=%d err=%v, want 100/0/3/nil", done, len(fb), calls, err)
+	}
+
+	bad := "module.m.t.r57"
+	calls = 0
+	applyBad := func(b []emit.ImportSpec) (int, error) {
+		calls++
+		for _, s := range b {
+			if s.Addr == bad {
+				return 0, errors.New("plan is not import-only")
+			}
+		}
+		return len(b), nil
+	}
+	done, fb, err = fastBatches(context.Background(), specs, 40, 8, applyBad)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done+len(fb) != 100 || len(fb) == 0 || len(fb) > 8 {
+		t.Fatalf("one bad: done=%d fallback=%d, want fallback of 1..8 around it and the rest done", done, len(fb))
+	}
+	if !slices.ContainsFunc(fb, func(s emit.ImportSpec) bool { return s.Addr == bad }) {
+		t.Fatalf("fallback %v doesn't contain the bad resource", fb)
+	}
+	if calls > 3+2*4 {
+		t.Errorf("%d applies to isolate one failure, want at most %d", calls, 3+2*4)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, err := fastBatches(ctx, specs, 40, 8, applyAll); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled ctx: err=%v, want context.Canceled", err)
 	}
 }

@@ -31,7 +31,9 @@
 // field-specific rules above would ever look at. The paired secret is
 // never read by this tool either way -- an access key ID alone can't
 // authenticate -- but it's still a real, live credential's identifier and
-// has no business in a generated project or its git history.
+// has no business in resource config. (An aws_iam_access_key resource's own
+// ID/import ID IS the key ID; that one has to stay, or it can't be
+// imported. It lands in inventory.json and imports.tf only.)
 package redact
 
 import (

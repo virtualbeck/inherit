@@ -125,9 +125,13 @@ inherit-123456789012/
 A handful of fields legitimately end up in Terraform config but routinely hold
 secrets: Lambda environment variables, EC2 / launch template user data, plain
 (non-`SecureString`) SSM parameter values, CloudFormation stack parameters,
-and AWS access key IDs anywhere they turn up (IAM users tagged with their own
-key ID are common). `scan` moves their values into `inventory.secrets.json`
-and leaves a marker in `inventory.json`.
+and AWS access key IDs anywhere they turn up in resource config (IAM users
+tagged with their own key ID are common). `scan` moves their values into
+`inventory.secrets.json` and leaves a marker in `inventory.json`. The one
+exception is an `aws_iam_access_key` resource's own ID: that is the key ID,
+and it's what `import` needs, so it appears in `inventory.json` and
+`imports.tf` (never a secret key; those are never readable). `imports.tf`
+can be deleted once everything is imported.
 
 The generated project never contains those values. Each affected attribute is
 listed under the resource's `lifecycle { ignore_changes = [...] }`, so the

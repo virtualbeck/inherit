@@ -58,7 +58,7 @@ func TestClaimDedup(t *testing.T) {
 }
 
 func TestClaimNameLengthCap(t *testing.T) {
-	long := "arn:aws:sns:us-west-1:178426410062:" + strings.Repeat("really-long-topic-name-", 6)
+	long := "arn:aws:sns:us-west-1:123456789012:" + strings.Repeat("really-long-topic-name-", 6)
 	got := newNamer().claim(model.Resource{ID: long}, false)
 	if len(got) > maxLogicalName {
 		t.Fatalf("name not capped: %d chars: %s", len(got), got)

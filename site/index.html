@@ -11,12 +11,14 @@
   --bg: #fbfaf8; --fg: #1c1b19; --muted: #5f5b54; --line: #e4e0d8;
   --code-bg: #f1eee8; --term-bg: #1c1b19; --term-fg: #e8e4dc; --term-dim: #9a958c;
   --accent: #b45309; --ok: #4d7c0f;
+  --hcl-kw: #7b42bc; --hcl-attr: #0b5cad; --hcl-str: #1a7f37; --hcl-num: #b45309; --hcl-ref: #0f766e;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #141311; --fg: #e8e4dc; --muted: #a39e95; --line: #2c2a26;
     --code-bg: #1d1c19; --term-bg: #0d0c0b; --term-fg: #e8e4dc; --term-dim: #8a857c;
     --accent: #f59e0b; --ok: #a3e635;
+    --hcl-kw: #b48ff0; --hcl-attr: #79b8ff; --hcl-str: #8fd19e; --hcl-num: #f59e0b; --hcl-ref: #5eead4;
   }
 }
 * { box-sizing: border-box; }
@@ -40,6 +42,11 @@ pre.term .d { color: var(--term-dim); }
 pre.term .ok { color: var(--ok); }
 pre.hcl { background: var(--code-bg); border: 1px solid var(--line); }
 pre.hcl .c { color: var(--muted); }
+pre.hcl .k { color: var(--hcl-kw); font-weight: 600; }
+pre.hcl .a { color: var(--hcl-attr); }
+pre.hcl .s { color: var(--hcl-str); }
+pre.hcl .n { color: var(--hcl-num); }
+pre.hcl .r { color: var(--hcl-ref); }
 .file { font: 0.78rem ui-monospace, Menlo, Consolas, monospace; color: var(--muted); margin: 0 0 4px; }
 ul { padding-left: 20px; margin: 0 0 14px; }
 li { margin-bottom: 6px; }
@@ -93,31 +100,31 @@ footer img { display: block; height: 20px; width: auto; }
 <p>Real HCL, laid out as a root module calling one module per category. IDs that point at other discovered resources become references; anything outside the scan becomes a variable. Every resource gets an <code>import</code> block.</p>
 
 <p class="file">modules/network/main.tf</p>
-<pre class="hcl">resource "aws_security_group" "main" {
-  description = "ssh from the office"
-  name        = var.security_group_name
-  vpc_id      = aws_default_vpc.main.id
+<pre class="hcl"><span class="k">resource</span> <span class="s">"aws_security_group"</span> <span class="s">"main"</span> {
+  <span class="a">description</span> = <span class="s">"ssh from the office"</span>
+  <span class="a">name</span>        = <span class="r">var.security_group_name</span>
+  <span class="a">vpc_id</span>      = <span class="r">aws_default_vpc.main.id</span>
 }
 
-resource "aws_vpc_security_group_ingress_rule" "main" {
-  cidr_ipv4         = "198.51.100.42/32"
-  from_port         = 22
-  ip_protocol       = "tcp"
-  security_group_id = aws_security_group.main.id
-  to_port           = 22
+<span class="k">resource</span> <span class="s">"aws_vpc_security_group_ingress_rule"</span> <span class="s">"main"</span> {
+  <span class="a">cidr_ipv4</span>         = <span class="s">"198.51.100.42/32"</span>
+  <span class="a">from_port</span>         = <span class="n">22</span>
+  <span class="a">ip_protocol</span>       = <span class="s">"tcp"</span>
+  <span class="a">security_group_id</span> = <span class="r">aws_security_group.main.id</span>
+  <span class="a">to_port</span>           = <span class="n">22</span>
 }</pre>
 
 <p class="file">main.tf</p>
-<pre class="hcl">module "compute" {
-  source          = "./modules/compute"
-  network_main_id = module.network.main_id  <span class="c"># cross-module wiring</span>
-  subnet_id       = "subnet-0fff5555666677778"
+<pre class="hcl"><span class="k">module</span> <span class="s">"compute"</span> {
+  <span class="a">source</span>          = <span class="s">"./modules/compute"</span>
+  <span class="a">network_main_id</span> = <span class="r">module.network.main_id</span>  <span class="c"># cross-module wiring</span>
+  <span class="a">subnet_id</span>       = <span class="s">"subnet-0fff5555666677778"</span>
 }</pre>
 
 <p class="file">imports.tf</p>
-<pre class="hcl">import {
-  to = module.network.aws_security_group.main
-  id = "sg-0bbb22223333cccc2"
+<pre class="hcl"><span class="k">import</span> {
+  <span class="a">to</span> = <span class="r">module.network.aws_security_group.main</span>
+  <span class="a">id</span> = <span class="s">"sg-0bbb22223333cccc2"</span>
 }</pre>
 
 <h2>Read-only, local, auditable</h2>

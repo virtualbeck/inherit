@@ -3,93 +3,162 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <title>inherit</title>
 <meta name="description" content="Turn a hand-built AWS account into a working OpenTofu/Terraform project. One open-source binary, read-only, runs on your machine.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23d97706'/%3E%3Cpath d='M5 4v8M8 4v8M11 4v8' stroke='white' stroke-width='1.6'/%3E%3C/svg%3E">
+<link rel="preload" href="fonts/jetbrains-mono.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/source-sans-3.woff2" as="font" type="font/woff2" crossorigin>
 <style>
+/* Both fonts are SIL OFL 1.1; see fonts/LICENSE-*.txt. */
+@font-face { font-family: "JetBrains Mono"; src: url(fonts/jetbrains-mono.woff2) format("woff2"); font-weight: 100 800; font-display: swap; }
+@font-face { font-family: "Source Sans 3"; src: url(fonts/source-sans-3.woff2) format("woff2"); font-weight: 200 900; font-display: swap; }
 :root {
-  --bg: #fbfaf8; --fg: #1c1b19; --muted: #5f5b54; --line: #e4e0d8;
-  --code-bg: #f1eee8; --term-bg: #1c1b19; --term-fg: #e8e4dc; --term-dim: #9a958c;
-  --accent: #b45309; --ok: #4d7c0f;
-  --hcl-kw: #7b42bc; --hcl-attr: #0b5cad; --hcl-str: #1a7f37; --hcl-num: #b45309; --hcl-ref: #0f766e;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #141311; --fg: #e8e4dc; --muted: #a39e95; --line: #2c2a26;
-    --code-bg: #1d1c19; --term-bg: #0d0c0b; --term-fg: #e8e4dc; --term-dim: #8a857c;
-    --accent: #f59e0b; --ok: #a3e635;
-    --hcl-kw: #b48ff0; --hcl-attr: #79b8ff; --hcl-str: #8fd19e; --hcl-num: #f59e0b; --hcl-ref: #5eead4;
-  }
+  --bg: #0f0e0d; --panel: #151412; --term: #1c1b19; --line: #2a2825; --line-strong: #3a3833;
+  --fg: #e8e4dc; --heading: #f4f1ea; --body: #c9c4ba; --muted: #a39e95; --dim: #8a857c;
+  --accent: #f59e0b; --accent-hover: #fbbf24;
+  --hcl-kw: #b48ff0; --hcl-attr: #79b8ff; --hcl-str: #8fd19e; --hcl-num: #f59e0b; --hcl-ref: #5eead4;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --wrap: 1080px; --gutter: 24px;
 }
 * { box-sizing: border-box; }
-body {
-  margin: 0; background: var(--bg); color: var(--fg);
-  font: 17px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
-}
-main { padding: 56px clamp(20px, 5vw, 72px) 40px; }
-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 0 6px; }
-h1 { font: 700 2.6rem/1.1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: var(--accent); margin: 0; letter-spacing: -0.02em; }
-.tagline { font-size: 1.3rem; font-weight: 600; margin: 0 0 14px; }
-h2 { font-size: 1.15rem; margin: 48px 0 12px; }
-p { margin: 0 0 14px; }
-.lede { font-size: 1.15rem; color: var(--muted); margin-bottom: 28px; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 18px/1.6 "Source Sans 3", system-ui, -apple-system, "Segoe UI", sans-serif; }
 a { color: var(--accent); }
-code, pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.86rem; }
-:not(pre) > code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
-pre { margin: 0 0 16px; padding: 14px 16px; border-radius: 8px; overflow-x: auto; line-height: 1.5; }
-pre.term { background: var(--term-bg); color: var(--term-fg); }
-pre.term .p { color: var(--term-dim); user-select: none; }
-pre.term .d { color: var(--term-dim); }
-pre.term .ok { color: var(--ok); }
-pre.hcl { background: var(--code-bg); border: 1px solid var(--line); }
-pre.hcl .c { color: var(--muted); }
-pre.hcl .k { color: var(--hcl-kw); font-weight: 600; }
-pre.hcl .a { color: var(--hcl-attr); }
-pre.hcl .s { color: var(--hcl-str); }
-pre.hcl .n { color: var(--hcl-num); }
-pre.hcl .r { color: var(--hcl-ref); }
-.file { font: 0.78rem ui-monospace, Menlo, Consolas, monospace; color: var(--muted); margin: 0 0 4px; }
-ul { padding-left: 20px; margin: 0 0 14px; }
-li { margin-bottom: 6px; }
-video.demo { display: block; width: 100%; max-width: 1200px; height: auto; border-radius: 8px; background: var(--term-bg); margin: 0 0 6px; }
-.caption { font-size: 0.85rem; color: var(--muted); margin: 0 0 10px; }
-details { margin: 0 0 16px; }
-summary { cursor: pointer; color: var(--muted); font-size: 0.9rem; margin-bottom: 8px; }
-.links { display: flex; gap: 18px; flex-wrap: wrap; margin: 4px 0 0; }
-footer { padding: 24px clamp(20px, 5vw, 72px) 32px; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.9rem; display: flex; gap: 24px; align-items: center; justify-content: space-between; }
+a:hover { color: var(--accent-hover); }
+code, pre, .mono { font-family: var(--mono); font-variant-ligatures: none; }
+code { font-size: 0.86em; color: var(--fg); overflow-wrap: anywhere; }
+pre { margin: 0; overflow-x: auto; }
+code.nowrap { white-space: nowrap; }
+.wrap { max-width: var(--wrap); margin: 0 auto; padding-left: var(--gutter); padding-right: var(--gutter); }
+
+header.wrap { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding-top: 22px; padding-bottom: 22px; }
+.home { font: 15px var(--mono); color: var(--muted); text-decoration: none; }
+.home span { color: var(--accent); }
+nav { display: flex; align-items: center; gap: 24px; font: 14px var(--mono); }
+nav a { color: var(--muted); text-decoration: none; }
+nav a:hover { color: var(--fg); }
+nav .gh { color: var(--fg); display: inline-flex; padding: 6px; margin: -6px; }
+nav .gh:hover { color: var(--accent); }
+nav .gh svg { width: 24px; height: 24px; fill: currentColor; }
+
+.hero { padding-top: 88px; padding-bottom: 64px; text-align: center; }
+h1 { margin: 0 0 18px; font: 800 clamp(56px, 12vw, 88px)/1 var(--mono); letter-spacing: -0.04em; color: var(--accent); }
+.tagline { margin: 0 auto 18px; max-width: 760px; font-size: clamp(22px, 4vw, 28px); line-height: 1.3; font-weight: 600; color: var(--heading); }
+.lede { margin: 0 auto 36px; max-width: 640px; color: var(--muted); }
+.cta { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
+.btn { display: inline-flex; align-items: center; min-height: 48px; padding: 0 22px; border-radius: 8px; font: 15px var(--mono); text-decoration: none; }
+.btn.primary { background: var(--accent); color: var(--term); font-weight: 700; }
+.btn.primary:hover { background: var(--accent-hover); color: var(--term); }
+.btn.ghost { border: 1px solid var(--line-strong); color: var(--fg); }
+.btn.ghost:hover { border-color: var(--accent); color: var(--fg); }
+
+.demo { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--term); }
+.demo video { display: block; width: 100%; height: auto; }
+.caption { margin: 12px 0 0; font: 13px var(--mono); color: var(--dim); text-align: center; }
+details { margin: 10px auto 0; max-width: 720px; text-align: left; }
+summary { cursor: pointer; font: 13px var(--mono); color: var(--dim); text-align: center; list-style-position: inside; }
+summary:hover { color: var(--muted); }
+details pre { margin-top: 12px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); font-size: 13.5px; line-height: 1.6; color: var(--fg); }
+details .p { color: var(--dim); user-select: none; }
+details .d { color: var(--muted); }
+details .ok { color: #a3e635; }
+
+section.block { padding-top: 120px; }
+.label { margin: 0 0 8px; font: 14px var(--mono); color: var(--accent); }
+h2 { margin: 0 0 12px; font-size: clamp(30px, 5vw, 38px); line-height: 1.15; font-weight: 600; letter-spacing: -0.015em; color: var(--heading); }
+.intro { margin: 0 0 36px; max-width: 680px; color: var(--muted); }
+
+.panel { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden; min-width: 0; }
+.panel .file { padding: 10px 18px; font: 13px var(--mono); color: var(--dim); border-bottom: 1px solid var(--line); }
+.panel pre { padding: 18px 22px; font-size: 14px; line-height: 1.65; }
+.panel pre.small { font-size: 13px; }
+.row { display: flex; flex-wrap: wrap; gap: 20px; align-items: stretch; }
+.row .tree { flex: 1 1 260px; }
+.row .tree pre { padding: 20px 22px; font-size: 13.5px; line-height: 1.7; color: var(--muted); }
+.row .tree .hi { color: var(--accent); }
+.row .tree .em { color: var(--fg); }
+.row .main { flex: 999 1 560px; }
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 20px; margin-top: 20px; }
+.k { color: var(--hcl-kw); font-weight: 600; }
+.a { color: var(--hcl-attr); }
+.s { color: var(--hcl-str); }
+.n { color: var(--hcl-num); }
+.r { color: var(--hcl-ref); }
+.c { color: var(--dim); }
+
+.grid4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.grid4 > div { background: var(--bg); padding: 26px; }
+.grid4 h3 { margin: 0 0 10px; font: 400 14px var(--mono); color: var(--accent); }
+.grid4 p { margin: 0; font-size: 16px; color: var(--body); }
+
+.limits { display: flex; flex-wrap: wrap; gap: 24px 40px; }
+.limits > div { flex: 1 1 280px; min-width: 0; }
+.limits ul { flex: 2 1 480px; min-width: 0; margin: 0; padding: 0; list-style: none; font: 15px/1.6 var(--mono); color: var(--body); }
+.limits li { display: flex; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.limits li::before { content: "-"; color: var(--dim); }
+.limits li.more { display: block; border: 0; padding-top: 16px; font: 16px/1.6 "Source Sans 3", system-ui, sans-serif; }
+.limits li.more::before { content: none; }
+
+.install { padding-bottom: 120px; }
+.install pre { padding: 22px 24px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--panel); font-size: 15px; line-height: 2; }
+.install .p, .install .c { color: var(--dim); user-select: none; }
+.install .after { margin: 18px 0 0; font-size: 16px; color: var(--muted); }
+
+footer { border-top: 1px solid var(--line); }
+footer .wrap { padding-top: 28px; padding-bottom: 36px; display: flex; gap: 24px; align-items: center; justify-content: space-between; font-size: 14px; color: var(--dim); }
 footer .sep { margin: 0 6px; }
+footer img { display: block; flex: none; height: 20px; width: auto; }
+
 @media (max-width: 640px) {
-  footer { flex-wrap: wrap; gap: 10px 16px; padding-top: 28px; padding-bottom: 40px; }
+  nav .text { display: none; }
+  .hero { padding-top: 56px; padding-bottom: 48px; }
+  section.block { padding-top: 88px; }
+  .install { padding-bottom: 88px; }
+  footer .wrap { flex-wrap: wrap; gap: 10px 16px; padding-bottom: 40px; }
   footer .note { display: contents; }
   footer .note > span:first-child { flex-basis: 100%; }
   footer .sep { display: none; }
   footer img { margin-left: auto; }
 }
-footer img { display: block; flex: none; height: 20px; width: auto; }
-.gh { color: var(--fg); line-height: 0; flex: none; }
-.gh:hover { color: var(--accent); }
-.gh svg { width: 32px; height: 32px; fill: currentColor; }
 </style>
 </head>
 <body>
-<main>
 
-<header>
-<h1>inherit</h1>
-<a class="gh" href="https://github.com/virtualbeck/inherit" aria-label="inherit on GitHub" title="inherit on GitHub"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.25-.6-.86-1.23-.85-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg></a>
+<header class="wrap">
+  <a class="home" href="#top"><span>~/</span>inherit</a>
+  <nav aria-label="Sections">
+    <a class="text" href="#output">output</a>
+    <a class="text" href="#safety">safety</a>
+    <a class="text" href="#limits">limits</a>
+    <a class="text" href="#install">install</a>
+    <a class="gh" href="https://github.com/virtualbeck/inherit" aria-label="inherit on GitHub" title="inherit on GitHub"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.25-.6-.86-1.23-.85-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg></a>
+  </nav>
 </header>
-<p class="tagline">Inherited an AWS account that isn't infrastructure-as-code? Start here.</p>
-<p class="lede">One open-source binary. It runs on your machine, reads your account with read-only APIs, and writes a Terraform/OpenTofu project you can <code>plan</code> and <code>import</code>. Nothing is uploaded anywhere.</p>
 
-<video class="demo" autoplay loop muted playsinline controls width="1200" height="960" aria-label="inherit scanning, planning and importing a simulated AWS account">
-  <source src="demo.webm" type="video/webm">
-  <source src="demo.mp4" type="video/mp4">
-</video>
-<p class="caption">A simulated account, paced to real timings.</p>
+<main id="top">
 
-<details>
-<summary>As text</summary>
-<pre class="term"><span class="p">$ </span>inherit scan --profile demo
+<section class="wrap hero">
+  <h1>inherit</h1>
+  <p class="tagline">Inherited an AWS account that isn't infrastructure-as-code? Start here.</p>
+  <p class="lede">One open-source binary. It runs on your machine, reads your account with read-only APIs, and writes a Terraform/OpenTofu project you can <code>plan</code> and <code>import</code>. Nothing is uploaded anywhere.</p>
+  <div class="cta">
+    <a class="btn primary" href="#install">$ install</a>
+    <a class="btn ghost" href="https://github.com/virtualbeck/inherit">github ↗</a>
+  </div>
+</section>
+
+<section class="wrap">
+  <div class="demo">
+    <video autoplay loop muted playsinline controls width="1200" height="960" aria-label="inherit scanning, planning and importing a simulated AWS account">
+      <source src="demo.webm" type="video/webm">
+      <source src="demo.mp4" type="video/mp4">
+    </video>
+  </div>
+  <p class="caption"># a simulated account, paced to real timings</p>
+  <details>
+    <summary>as text</summary>
+<pre><span class="p">$ </span>inherit scan --profile demo
 <span class="d">found 207 resources across 17 regions
   pruned 155 default + 34 singleton resources
   18 resources across 2 regions kept
@@ -100,18 +169,36 @@ footer img { display: block; flex: none; height: 20px; width: auto; }
 
 <span class="p">$ </span>inherit import --fast inherit-999999999999
 <span class="ok">No changes. Your infrastructure matches the configuration.</span></pre>
-</details>
+  </details>
+</section>
 
-<div class="links">
-  <a href="https://github.com/virtualbeck/inherit">GitHub</a>
-  <a href="#install">Install</a>
-</div>
-
-<h2>What you get</h2>
-<p>Real HCL, laid out as a root module calling one module per category. IDs that point at other discovered resources become references; anything outside the scan becomes a variable. Every resource gets an <code>import</code> block.</p>
-
-<p class="file">modules/network/main.tf</p>
-<pre class="hcl"><span class="k">resource</span> <span class="s">"aws_security_group"</span> <span class="s">"main"</span> {
+<section class="wrap block" id="output">
+  <p class="label">// output</p>
+  <h2>A project you'd have written yourself.</h2>
+  <p class="intro">A root module calling one module per category. IDs that point at other discovered resources become references; anything outside the scan becomes a variable. Every resource gets an <code>import</code> block.</p>
+  <div class="row">
+    <div class="panel tree">
+<pre><span class="em">inherit-999999999999/</span>
+├── main.tf
+├── imports.tf
+├── providers.tf
+├── backend.tf
+├── modules/
+│   ├── compute/
+│   ├── dns/
+│   ├── integration/
+│   ├── <span class="hi">network/</span>
+│   │   ├── <span class="em">main.tf</span>
+│   │   ├── outputs.tf
+│   │   └── variables.tf
+│   ├── observability/
+│   ├── security/
+│   └── storage/
+└── inventory.json</pre>
+    </div>
+    <div class="panel main">
+      <div class="file">modules/network/main.tf</div>
+<pre><span class="k">resource</span> <span class="s">"aws_security_group"</span> <span class="s">"main"</span> {
   <span class="a">description</span> = <span class="s">"ssh from the office"</span>
   <span class="a">name</span>        = <span class="r">var.security_group_name</span>
   <span class="a">vpc_id</span>      = <span class="r">aws_default_vpc.main.id</span>
@@ -124,45 +211,83 @@ footer img { display: block; flex: none; height: 20px; width: auto; }
   <span class="a">security_group_id</span> = <span class="r">aws_security_group.main.id</span>
   <span class="a">to_port</span>           = <span class="n">22</span>
 }</pre>
-
-<p class="file">main.tf</p>
-<pre class="hcl"><span class="k">module</span> <span class="s">"compute"</span> {
+    </div>
+  </div>
+  <div class="pair">
+    <div class="panel">
+      <div class="file">main.tf</div>
+<pre class="small"><span class="k">module</span> <span class="s">"compute"</span> {
   <span class="a">source</span>          = <span class="s">"./modules/compute"</span>
-  <span class="a">network_main_id</span> = <span class="r">module.network.main_id</span>  <span class="c"># cross-module wiring</span>
+  <span class="a">network_main_id</span> = <span class="r">module.network.main_id</span>
   <span class="a">subnet_id</span>       = <span class="s">"subnet-0fff5555666677778"</span>
 }</pre>
-
-<p class="file">imports.tf</p>
-<pre class="hcl"><span class="k">import</span> {
+    </div>
+    <div class="panel">
+      <div class="file">imports.tf</div>
+<pre class="small"><span class="k">import</span> {
   <span class="a">to</span> = <span class="r">module.network.aws_security_group.main</span>
   <span class="a">id</span> = <span class="s">"sg-0bbb22223333cccc2"</span>
 }</pre>
+    </div>
+  </div>
+</section>
 
-<h2>Read-only, local, auditable</h2>
-<ul>
-  <li>Every AWS request passes a <a href="https://github.com/virtualbeck/inherit/blob/main/internal/awsx/readonly.go">signing-time guard</a> that rejects anything but read operations before it leaves the process.</li>
-  <li>It runs on your machine with your credentials. No account, no telemetry, no upload.</li>
-  <li>Secrets (Lambda env vars, user data, plain SSM values) stay out of the <code>.tf</code> files: they land in a gitignored local file and the attributes go under <code>ignore_changes</code>.</li>
-  <li><code>import</code> only ever calls the provider's Read. <code>import --fast</code> applies a batch only after verifying its plan is nothing but no-op imports.</li>
-  <li>Apache-2.0. Go, one static binary.</li>
-</ul>
+<section class="wrap block" id="safety">
+  <p class="label">// safety</p>
+  <h2>Read-only, local, auditable.</h2>
+  <p class="intro">Apache-2.0. Go, one static binary.</p>
+  <div class="grid4">
+    <div>
+      <h3>read-only</h3>
+      <p>Every AWS request passes a <a href="https://github.com/virtualbeck/inherit/blob/main/internal/awsx/readonly.go">signing-time guard</a> that rejects anything but read operations before it leaves the process.</p>
+    </div>
+    <div>
+      <h3>local</h3>
+      <p>It runs on your machine with your credentials. No account, no telemetry, no upload.</p>
+    </div>
+    <div>
+      <h3>secrets</h3>
+      <p>Lambda env vars, user data and plain SSM values stay out of the <code>.tf</code> files: they land in a gitignored local file and the attributes go under <code>ignore_changes</code>.</p>
+    </div>
+    <div>
+      <h3>import</h3>
+      <p><code>import</code> only ever calls the provider's Read. <code class="nowrap">import --fast</code> applies a batch only after verifying its plan is nothing but no-op imports.</p>
+    </div>
+  </div>
+</section>
 
-<h2>Limits</h2>
-<ul>
-  <li>Covers 363 of the AWS provider's 1,735 resource types: the common ones first.</li>
-  <li>Lambda code can't be read back from AWS, so functions point at a placeholder zip.</li>
-  <li>A few provider-only settings show a one-time diff after import.</li>
-</ul>
-<p>Details, coverage and internals are in the <a href="https://github.com/virtualbeck/inherit">GitHub repo</a>.</p>
+<section class="wrap block" id="limits">
+  <div class="limits">
+    <div>
+      <p class="label">// limits</p>
+      <h2>Honest about the gaps.</h2>
+    </div>
+    <ul>
+      <li>Covers 363 of the AWS provider's 1,735 resource types: the common ones first.</li>
+      <li>Lambda code can't be read back from AWS, so functions point at a placeholder zip.</li>
+      <li>A few provider-only settings show a one-time diff after import.</li>
+      <li class="more">Details, coverage and internals are in the <a href="https://github.com/virtualbeck/inherit">GitHub repo</a>.</li>
+    </ul>
+  </div>
+</section>
 
-<h2 id="install">Install</h2>
-<pre class="term"><span class="p">$ </span>curl -fsSL https://raw.githubusercontent.com/virtualbeck/inherit/main/install.sh | sh</pre>
-<p>Or <code>go install github.com/virtualbeck/inherit/cmd/inherit@latest</code>, or grab a binary from <a href="https://github.com/virtualbeck/inherit/releases">Releases</a> (Linux, macOS, Windows). <code>plan</code> and <code>import</code> need <a href="https://opentofu.org">OpenTofu</a> or Terraform.</p>
+<section class="wrap block install" id="install">
+  <p class="label">// install</p>
+  <h2>One line.</h2>
+<pre><span class="p">$ </span>curl -fsSL https://raw.githubusercontent.com/virtualbeck/inherit/main/install.sh | sh
+<span class="c"># or</span>
+<span class="p">$ </span>go install github.com/virtualbeck/inherit/cmd/inherit@latest</pre>
+  <p class="after">Binaries for Linux, macOS and Windows are on <a href="https://github.com/virtualbeck/inherit/releases">Releases</a>. <code>plan</code> and <code>import</code> need <a href="https://opentofu.org">OpenTofu</a> or Terraform.</p>
+</section>
 
 </main>
+
 <footer>
-  <span class="note"><span>inherit is open source under Apache-2.0</span><span class="sep" aria-hidden="true">·</span><a href="https://github.com/virtualbeck/inherit">github.com/virtualbeck/inherit</a></span>
-  <img src="https://visitor-badge.laobi.icu/badge?page_id=inherit.virtualbeck.com&amp;left_text=views&amp;left_color=%235f5b54&amp;right_color=%23b45309" alt="page views" height="20">
+  <div class="wrap">
+    <span class="note"><span>inherit is open source under Apache-2.0</span><span class="sep" aria-hidden="true">·</span><a href="https://github.com/virtualbeck/inherit">github.com/virtualbeck/inherit</a></span>
+    <img src="https://visitor-badge.laobi.icu/badge?page_id=inherit.virtualbeck.com&amp;left_text=views&amp;left_color=%235f5b54&amp;right_color=%23b45309" alt="page views" height="20">
+  </div>
 </footer>
+
 </body>
 </html>

@@ -8,7 +8,7 @@ Output site/demo.mp4
 Output site/demo.webm
 
 Set Shell bash
-Set FontSize 14
+Set FontSize 20
 Set Width 1200
 Set Height 960
 Set Padding 20

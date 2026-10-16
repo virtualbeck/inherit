@@ -45,18 +45,18 @@ module.network.aws_security_group.main: Preparing import... [id=sg-0bbb22223333c
 module.network.aws_vpc_security_group_ingress_rule.main: Preparing import... [id=sgr-0ccc33334444dddd3]
 module.compute.aws_instance.main: Preparing import... [id=i-0ddd44445555eeee4]
 module.dns.aws_route53_record.main: Preparing import... [id=Z0123456789ABCDEFGHIJ_www.acme.example_A]
-module.integration.aws_sns_topic.main: Preparing import... [id=arn:aws:sns:us-east-1:999999999999:acme-alerts]
-module.integration.aws_sqs_queue.acme_orders: Preparing import... [id=https://sqs.us-east-1.amazonaws.com/999999999999/acme-orders]
-module.integration.aws_sqs_queue.acme_orders_dr: Preparing import... [id=https://sqs.us-west-2.amazonaws.com/999999999999/acme-orders-dr]
-module.observability.aws_cloudwatch_log_group.main: Preparing import... [id=/aws/lambda/acme-resize]
+module.integration.aws_sns_topic.main: Preparing import... [id=arn:aws:sns:us-east-1:999999999999:alerts]
+module.integration.aws_sqs_queue.orders: Preparing import... [id=https://sqs.us-east-1.amazonaws.com/999999999999/orders]
+module.integration.aws_sqs_queue.orders_dr: Preparing import... [id=https://sqs.us-west-2.amazonaws.com/999999999999/orders-dr]
+module.observability.aws_cloudwatch_log_group.main: Preparing import... [id=/aws/lambda/resize]
 module.security.aws_iam_group.main: Preparing import... [id=Admins]
 module.security.aws_iam_group_policy_attachment.policy["0174716e"]: Preparing import... [id=Deploy/arn:aws:iam::aws:policy/AmazonS3FullAccess]
 module.security.aws_iam_group_policy_attachment.policy["08c6ca62"]: Preparing import... [id=Admins/arn:aws:iam::aws:policy/AdministratorAccess]
 module.security.aws_iam_group_policy_attachment.policy["aee5be59"]: Preparing import... [id=ReadOnly/arn:aws:iam::aws:policy/ReadOnlyAccess]
-module.security.aws_iam_policy.main: Preparing import... [id=arn:aws:iam::999999999999:policy/backup-role-999999999999]
-module.security.aws_iam_role.main: Preparing import... [id=acme-resize]
-module.storage.aws_s3_bucket.acme_app_assets_999999999999: Preparing import... [id=acme-app-assets-999999999999]
-module.storage.aws_s3_bucket.acme_backups_999999999999: Preparing import... [id=acme-backups-999999999999]
+module.security.aws_iam_policy.main: Preparing import... [id=arn:aws:iam::999999999999:policy/backup-role]
+module.security.aws_iam_role.main: Preparing import... [id=resize]
+module.storage.aws_s3_bucket.app_assets_999999999999: Preparing import... [id=app-assets-999999999999]
+module.storage.aws_s3_bucket.backups_999999999999: Preparing import... [id=backups-999999999999]
 @@
 module.dns.aws_route53_zone.main: Refreshing state... [id=Z0123456789ABCDEFGHIJ]
 module.network.aws_default_vpc.main: Refreshing state... [id=vpc-0aaa11112222bbbb1]
@@ -64,18 +64,18 @@ module.network.aws_security_group.main: Refreshing state... [id=sg-0bbb22223333c
 module.network.aws_vpc_security_group_ingress_rule.main: Refreshing state... [id=sgr-0ccc33334444dddd3]
 module.compute.aws_instance.main: Refreshing state... [id=i-0ddd44445555eeee4]
 module.dns.aws_route53_record.main: Refreshing state... [id=Z0123456789ABCDEFGHIJ_www.acme.example_A]
-module.integration.aws_sns_topic.main: Refreshing state... [id=arn:aws:sns:us-east-1:999999999999:acme-alerts]
-module.integration.aws_sqs_queue.acme_orders: Refreshing state... [id=https://sqs.us-east-1.amazonaws.com/999999999999/acme-orders]
-module.integration.aws_sqs_queue.acme_orders_dr: Refreshing state... [id=https://sqs.us-west-2.amazonaws.com/999999999999/acme-orders-dr]
-module.observability.aws_cloudwatch_log_group.main: Refreshing state... [id=/aws/lambda/acme-resize]
+module.integration.aws_sns_topic.main: Refreshing state... [id=arn:aws:sns:us-east-1:999999999999:alerts]
+module.integration.aws_sqs_queue.orders: Refreshing state... [id=https://sqs.us-east-1.amazonaws.com/999999999999/orders]
+module.integration.aws_sqs_queue.orders_dr: Refreshing state... [id=https://sqs.us-west-2.amazonaws.com/999999999999/orders-dr]
+module.observability.aws_cloudwatch_log_group.main: Refreshing state... [id=/aws/lambda/resize]
 module.security.aws_iam_group.main: Refreshing state... [id=Admins]
 module.security.aws_iam_group_policy_attachment.policy["0174716e"]: Refreshing state... [id=Deploy/arn:aws:iam::aws:policy/AmazonS3FullAccess]
 module.security.aws_iam_group_policy_attachment.policy["08c6ca62"]: Refreshing state... [id=Admins/arn:aws:iam::aws:policy/AdministratorAccess]
 module.security.aws_iam_group_policy_attachment.policy["aee5be59"]: Refreshing state... [id=ReadOnly/arn:aws:iam::aws:policy/ReadOnlyAccess]
-module.security.aws_iam_policy.main: Refreshing state... [id=arn:aws:iam::999999999999:policy/backup-role-999999999999]
-module.security.aws_iam_role.main: Refreshing state... [id=acme-resize]
-module.storage.aws_s3_bucket.acme_app_assets_999999999999: Refreshing state... [id=acme-app-assets-999999999999]
-module.storage.aws_s3_bucket.acme_backups_999999999999: Refreshing state... [id=acme-backups-999999999999]
+module.security.aws_iam_policy.main: Refreshing state... [id=arn:aws:iam::999999999999:policy/backup-role]
+module.security.aws_iam_role.main: Refreshing state... [id=resize]
+module.storage.aws_s3_bucket.app_assets_999999999999: Refreshing state... [id=app-assets-999999999999]
+module.storage.aws_s3_bucket.backups_999999999999: Refreshing state... [id=backups-999999999999]
 @@
 
 OpenTofu will perform the following actions:
@@ -116,28 +116,28 @@ OpenTofu will perform the following actions:
 
   # module.integration.aws_sns_topic.main will be imported
     resource "aws_sns_topic" "main" {
-        arn      = "arn:aws:sns:us-east-1:999999999999:acme-alerts"
-        id       = "arn:aws:sns:us-east-1:999999999999:acme-alerts"
-        name     = "acme-alerts"
+        arn      = "arn:aws:sns:us-east-1:999999999999:alerts"
+        id       = "arn:aws:sns:us-east-1:999999999999:alerts"
+        name     = "alerts"
         tags_all = {}
     }
 
-  # module.integration.aws_sqs_queue.acme_orders will be imported
-    resource "aws_sqs_queue" "acme_orders" {
-        arn                        = "arn:aws:sqs:us-east-1:999999999999:acme-orders"
-        id                         = "https://sqs.us-east-1.amazonaws.com/999999999999/acme-orders"
+  # module.integration.aws_sqs_queue.orders will be imported
+    resource "aws_sqs_queue" "orders" {
+        arn                        = "arn:aws:sqs:us-east-1:999999999999:orders"
+        id                         = "https://sqs.us-east-1.amazonaws.com/999999999999/orders"
         message_retention_seconds  = 345600
-        name                       = "acme-orders"
+        name                       = "orders"
         tags_all                   = {}
         visibility_timeout_seconds = 60
     }
 
-  # module.integration.aws_sqs_queue.acme_orders_dr will be imported
-    resource "aws_sqs_queue" "acme_orders_dr" {
-        arn                        = "arn:aws:sqs:us-west-2:999999999999:acme-orders-dr"
-        id                         = "https://sqs.us-west-2.amazonaws.com/999999999999/acme-orders-dr"
+  # module.integration.aws_sqs_queue.orders_dr will be imported
+    resource "aws_sqs_queue" "orders_dr" {
+        arn                        = "arn:aws:sqs:us-west-2:999999999999:orders-dr"
+        id                         = "https://sqs.us-west-2.amazonaws.com/999999999999/orders-dr"
         message_retention_seconds  = 345600
-        name                       = "acme-orders-dr"
+        name                       = "orders-dr"
         tags_all                   = {}
         visibility_timeout_seconds = 60
     }
@@ -175,9 +175,9 @@ OpenTofu will perform the following actions:
 
   # module.observability.aws_cloudwatch_log_group.main will be imported
     resource "aws_cloudwatch_log_group" "main" {
-        arn               = "arn:aws:logs:us-east-1:999999999999:log-group:/aws/lambda/acme-resize"
-        id                = "/aws/lambda/acme-resize"
-        name              = "/aws/lambda/acme-resize"
+        arn               = "arn:aws:logs:us-east-1:999999999999:log-group:/aws/lambda/resize"
+        id                = "/aws/lambda/resize"
+        name              = "/aws/lambda/resize"
         retention_in_days = 14
         tags_all          = {}
     }
@@ -214,9 +214,9 @@ OpenTofu will perform the following actions:
 
   # module.security.aws_iam_policy.main will be imported
     resource "aws_iam_policy" "main" {
-        arn      = "arn:aws:iam::999999999999:policy/backup-role-999999999999"
-        id       = "arn:aws:iam::999999999999:policy/backup-role-999999999999"
-        name     = "backup-role-999999999999"
+        arn      = "arn:aws:iam::999999999999:policy/backup-role"
+        id       = "arn:aws:iam::999999999999:policy/backup-role"
+        name     = "backup-role"
         path     = "/"
         policy   = jsonencode(
             {
@@ -235,7 +235,7 @@ OpenTofu will perform the following actions:
 
   # module.security.aws_iam_role.main will be imported
     resource "aws_iam_role" "main" {
-        arn                  = "arn:aws:iam::999999999999:role/acme-resize"
+        arn                  = "arn:aws:iam::999999999999:role/resize"
         assume_role_policy   = jsonencode(
             {
                 Statement = [
@@ -250,26 +250,26 @@ OpenTofu will perform the following actions:
                 Version   = "2012-10-17"
             }
         )
-        id                   = "acme-resize"
+        id                   = "resize"
         max_session_duration = 3600
-        name                 = "acme-resize"
+        name                 = "resize"
         path                 = "/"
         tags_all             = {}
     }
 
-  # module.storage.aws_s3_bucket.acme_app_assets_999999999999 will be imported
-    resource "aws_s3_bucket" "acme_app_assets_999999999999" {
-        arn      = "arn:aws:s3:::acme-app-assets-999999999999"
-        bucket   = "acme-app-assets-999999999999"
-        id       = "acme-app-assets-999999999999"
+  # module.storage.aws_s3_bucket.app_assets_999999999999 will be imported
+    resource "aws_s3_bucket" "app_assets_999999999999" {
+        arn      = "arn:aws:s3:::app-assets-999999999999"
+        bucket   = "app-assets-999999999999"
+        id       = "app-assets-999999999999"
         tags_all = {}
     }
 
-  # module.storage.aws_s3_bucket.acme_backups_999999999999 will be imported
-    resource "aws_s3_bucket" "acme_backups_999999999999" {
-        arn      = "arn:aws:s3:::acme-backups-999999999999"
-        bucket   = "acme-backups-999999999999"
-        id       = "acme-backups-999999999999"
+  # module.storage.aws_s3_bucket.backups_999999999999 will be imported
+    resource "aws_s3_bucket" "backups_999999999999" {
+        arn      = "arn:aws:s3:::backups-999999999999"
+        bucket   = "backups-999999999999"
+        id       = "backups-999999999999"
         tags_all = {}
     }
 

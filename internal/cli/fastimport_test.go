@@ -215,3 +215,19 @@ func TestFastBatchesSplitsAroundFailures(t *testing.T) {
 		t.Fatalf("cancelled ctx: err=%v, want context.Canceled", err)
 	}
 }
+
+// The real error, not the first progress line.
+func TestPlanError(t *testing.T) {
+	cases := []struct{ out, want string }{
+		{"module.a.aws_eip.x: Preparing import... [id=eipalloc-1]\nmodule.a.aws_eip.x: Refreshing state...\n\nError: Invalid target address\n\n  on main.tf line 1:\n",
+			"Invalid target address"},
+		{"Preparing import...\nError: first\n\nError: second\n\nError: third\n", "first (and 2 more)"},
+		{"Preparing import...\nsomething odd happened\n", "something odd happened"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := planError(c.out); got != c.want {
+			t.Errorf("planError(%q) = %q, want %q", c.out, got, c.want)
+		}
+	}
+}

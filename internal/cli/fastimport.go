@@ -125,7 +125,7 @@ func applyChunk(ctx context.Context, r *tf.Runner, planDir string, idx int, chun
 	planFile := filepath.Join(planDir, fmt.Sprintf("chunk-%d.tfplan", idx))
 	planOut, err := r.PlanTargeted(ctx, planFile, targets)
 	if err != nil {
-		return 0, fmt.Errorf("plan failed: %s", firstLine(planOut))
+		return 0, fmt.Errorf("plan failed: %s", planError(planOut))
 	}
 
 	planJSON, err := r.ShowJSON(ctx, planFile)
@@ -142,10 +142,28 @@ func applyChunk(ctx context.Context, r *tf.Runner, planDir string, idx int, chun
 	return len(chunk), nil
 }
 
-func firstLine(s string) string {
+// planError picks tofu's errors out of progress noise.
+func planError(out string) string {
+	var errs []string
+	for line := range strings.SplitSeq(out, "\n") {
+		if msg, ok := strings.CutPrefix(strings.TrimSpace(line), "Error: "); ok {
+			errs = append(errs, msg)
+		}
+	}
+	switch len(errs) {
+	case 0:
+		return lastLine(out)
+	case 1:
+		return errs[0]
+	default:
+		return fmt.Sprintf("%s (and %d more)", errs[0], len(errs)-1)
+	}
+}
+
+func lastLine(s string) string {
 	s = strings.TrimSpace(s)
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		s = s[:i]
+	if i := strings.LastIndexByte(s, '\n'); i >= 0 {
+		s = strings.TrimSpace(s[i+1:])
 	}
 	return s
 }

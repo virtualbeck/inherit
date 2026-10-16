@@ -56,17 +56,7 @@ More detail on the internals: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 curl -fsSL https://raw.githubusercontent.com/virtualbeck/inherit/main/install.sh | sh
 ```
 
-Downloads the right binary for your OS/arch, verifies it against the
-release's `SHA256SUMS`, and installs it to `~/.local/bin/inherit`: no
-`sudo`, nothing written outside your home directory. Re-run any time to
-update. `INHERIT_INSTALL_DIR` overrides the install directory.
-
 Or grab an archive from [Releases](https://github.com/virtualbeck/inherit/releases)
-(`inherit_<version>_<os>_<arch>.tar.gz`, `<os>` = `darwin` | `linux`,
-`<arch>` = `amd64` | `arm64`), verify it against `SHA256SUMS`, and put the
-`inherit` binary inside on your `PATH`. On macOS the binary is unsigned, so
-the first run needs `xattr -d com.apple.quarantine <path>` or an approval in
-**System Settings > Privacy & Security**.
 
 ### Windows
 
@@ -80,9 +70,6 @@ anyway**).
 ```sh
 go install github.com/virtualbeck/inherit/cmd/inherit@latest   # Go 1.27+
 ```
-
-`plan` and `import` need [OpenTofu](https://opentofu.org) (preferred) or
-Terraform on your `PATH`. `scan` and `generate` don't.
 
 ## Usage
 

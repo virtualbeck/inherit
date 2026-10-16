@@ -27,14 +27,15 @@ body {
   font: 17px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 main { padding: 56px clamp(20px, 5vw, 72px) 40px; }
-h1 { font: 700 2.6rem/1.1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: var(--accent); margin: 0 0 6px; letter-spacing: -0.02em; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 0 6px; }
+h1 { font: 700 2.6rem/1.1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: var(--accent); margin: 0; letter-spacing: -0.02em; }
 .tagline { font-size: 1.3rem; font-weight: 600; margin: 0 0 14px; }
 h2 { font-size: 1.15rem; margin: 48px 0 12px; }
 p { margin: 0 0 14px; }
 .lede { font-size: 1.15rem; color: var(--muted); margin-bottom: 28px; }
 a { color: var(--accent); }
 code, pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.86rem; }
-:not(pre) > code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+:not(pre) > code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
 pre { margin: 0 0 16px; padding: 14px 16px; border-radius: 8px; overflow-x: auto; line-height: 1.5; }
 pre.term { background: var(--term-bg); color: var(--term-fg); }
 pre.term .p { color: var(--term-dim); user-select: none; }
@@ -55,18 +56,28 @@ video.demo { display: block; width: 100%; max-width: 1200px; height: auto; borde
 details { margin: 0 0 16px; }
 summary { cursor: pointer; color: var(--muted); font-size: 0.9rem; margin-bottom: 8px; }
 .links { display: flex; gap: 18px; flex-wrap: wrap; margin: 4px 0 0; }
-footer { padding: 20px clamp(20px, 5vw, 72px); border-top: 1px solid var(--line); color: var(--muted); font-size: 0.9rem; display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; justify-content: space-between; }
-footer img { display: block; height: 20px; width: auto; }
-.gh { position: absolute; top: 20px; right: clamp(20px, 5vw, 72px); color: var(--fg); line-height: 0; }
+footer { padding: 24px clamp(20px, 5vw, 72px) 32px; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.9rem; display: flex; gap: 24px; align-items: center; justify-content: space-between; }
+footer .sep { margin: 0 6px; }
+@media (max-width: 640px) {
+  footer { flex-wrap: wrap; gap: 10px 16px; padding-top: 28px; padding-bottom: 40px; }
+  footer .note { display: contents; }
+  footer .note > span:first-child { flex-basis: 100%; }
+  footer .sep { display: none; }
+  footer img { margin-left: auto; }
+}
+footer img { display: block; flex: none; height: 20px; width: auto; }
+.gh { color: var(--fg); line-height: 0; flex: none; }
 .gh:hover { color: var(--accent); }
 .gh svg { width: 32px; height: 32px; fill: currentColor; }
 </style>
 </head>
 <body>
-<a class="gh" href="https://github.com/virtualbeck/inherit" aria-label="inherit on GitHub" title="inherit on GitHub"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.25-.6-.86-1.23-.85-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg></a>
 <main>
 
+<header>
 <h1>inherit</h1>
+<a class="gh" href="https://github.com/virtualbeck/inherit" aria-label="inherit on GitHub" title="inherit on GitHub"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.25-.6-.86-1.23-.85-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg></a>
+</header>
 <p class="tagline">Inherited an AWS account that isn't infrastructure-as-code? Start here.</p>
 <p class="lede">One open-source binary. It runs on your machine, reads your account with read-only APIs, and writes a Terraform/OpenTofu project you can <code>plan</code> and <code>import</code>. Nothing is uploaded anywhere.</p>
 
@@ -150,7 +161,7 @@ footer img { display: block; height: 20px; width: auto; }
 
 </main>
 <footer>
-  <span>inherit is open source under Apache-2.0 · <a href="https://github.com/virtualbeck/inherit">github.com/virtualbeck/inherit</a></span>
+  <span class="note"><span>inherit is open source under Apache-2.0</span><span class="sep" aria-hidden="true">·</span><a href="https://github.com/virtualbeck/inherit">github.com/virtualbeck/inherit</a></span>
   <img src="https://visitor-badge.laobi.icu/badge?page_id=inherit.virtualbeck.com&amp;left_text=views&amp;left_color=%235f5b54&amp;right_color=%23b45309" alt="page views" height="20">
 </footer>
 </body>

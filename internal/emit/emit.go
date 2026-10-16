@@ -386,7 +386,7 @@ func Write(inv model.Inventory, outDir string, opt Options) (Result, error) {
 
 	imp := hclwrite.NewEmptyFile()
 	for _, it := range items {
-		id := importID(it.r)
+		id := importID(it.r, inv.Partition, inv.Account)
 		if id == "" {
 			continue
 		}
@@ -1050,7 +1050,19 @@ var noImportTypes = map[string]bool{
 	"aws_guardduty_organization_configuration_feature": true,
 }
 
-func importID(r model.Resource) string {
+func importID(r model.Resource, partition, account string) string {
+	id := rawImportID(r)
+	// Older inventories hold the bare setting ID.
+	if r.TFType == "aws_ssm_service_setting" && strings.HasPrefix(id, "/") && r.Region != "" && account != "" {
+		if partition == "" {
+			partition = "aws"
+		}
+		return fmt.Sprintf("arn:%s:ssm:%s:%s:servicesetting%s", partition, r.Region, account, id)
+	}
+	return id
+}
+
+func rawImportID(r model.Resource) string {
 	if noImportTypes[r.TFType] {
 		return ""
 	}
@@ -1058,6 +1070,9 @@ func importID(r model.Resource) string {
 		return r.ImportID
 	}
 	switch r.TFType {
+	case "aws_iam_role", "aws_iam_user", "aws_iam_group", "aws_iam_instance_profile":
+		// imported by name; the ARN id carries the path
+		return r.ID[strings.LastIndexByte(r.ID, '/')+1:]
 	case "aws_iam_policy", "aws_sns_topic",
 		"aws_resourceexplorer2_index", "aws_resourceexplorer2_view",
 		"aws_iam_openid_connect_provider", "aws_iam_saml_provider",

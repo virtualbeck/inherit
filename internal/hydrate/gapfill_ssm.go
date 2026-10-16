@@ -84,9 +84,15 @@ func gapFillSSMExtras(ctx context.Context, c *Clients, region string) ([]model.R
 		if err != nil || s.ServiceSetting == nil || aws.ToString(s.ServiceSetting.Status) != "Customized" {
 			return
 		}
+		// the provider imports settings by ARN
+		arn := aws.ToString(s.ServiceSetting.ARN)
+		importID := arn
+		if importID == "" {
+			importID = settingID
+		}
 		settings[i] = &model.Resource{
 			Service: "ssm", Type: "servicesetting", TFType: "aws_ssm_service_setting",
-			Region: region, ID: settingID, ImportID: settingID,
+			ARN: arn, Region: region, ID: settingID, ImportID: importID,
 			Config: map[string]any{
 				"setting_id":    settingID,
 				"setting_value": aws.ToString(s.ServiceSetting.SettingValue),

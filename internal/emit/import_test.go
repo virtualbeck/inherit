@@ -34,9 +34,22 @@ func TestImportID(t *testing.T) {
 		{model.Resource{TFType: "aws_ssm_parameter", ID: "tf/route53/baseline/zone_id",
 			Config: map[string]any{"name": "/tf/route53/baseline/zone_id"}}, "/tf/route53/baseline/zone_id"},
 		{model.Resource{TFType: "aws_ssm_parameter", ID: "simple-name"}, "simple-name"}, // no Config -> fall back to ID
+		// IAM names import without their path
+		{model.Resource{TFType: "aws_iam_role", ID: "service-role/SNSSuccessFeedback"}, "SNSSuccessFeedback"},
+		{model.Resource{TFType: "aws_iam_role", ID: "plain-role"}, "plain-role"},
+		{model.Resource{TFType: "aws_iam_user", ID: "ci/deployer"}, "deployer"},
+		{model.Resource{TFType: "aws_iam_group", ID: "teams/admins"}, "admins"},
+		{model.Resource{TFType: "aws_iam_instance_profile", ID: "app/web-profile"}, "web-profile"},
+		// service settings import by ARN
+		{model.Resource{TFType: "aws_ssm_service_setting", Region: "us-east-1",
+			ID: "/ssm/managed-instance/default-ec2-instance-management-role", ImportID: "/ssm/managed-instance/default-ec2-instance-management-role"},
+			"arn:aws:ssm:us-east-1:1:servicesetting/ssm/managed-instance/default-ec2-instance-management-role"},
+		{model.Resource{TFType: "aws_ssm_service_setting", Region: "us-east-1",
+			ID: "/ssm/x", ImportID: "arn:aws:ssm:us-east-1:1:servicesetting/ssm/x"},
+			"arn:aws:ssm:us-east-1:1:servicesetting/ssm/x"},
 	}
 	for _, c := range cases {
-		if got := importID(c.r); got != c.want {
+		if got := importID(c.r, "aws", "1"); got != c.want {
 			t.Errorf("importID(%s) = %q, want %q", c.r.TFType, got, c.want)
 		}
 	}

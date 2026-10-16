@@ -15,6 +15,13 @@ func init() { registerGlobalGapFiller(gapFillIAM) }
 // AWS-managed roles aren't imported.
 const awsServiceLinkedRolePrefix = "/aws-service-role/"
 
+// IAM Identity Center owns these; IAM refuses edits.
+const awsReservedRolePrefix = "/aws-reserved/"
+
+func awsManagedRole(path string) bool {
+	return strings.HasPrefix(path, awsServiceLinkedRolePrefix) || strings.HasPrefix(path, awsReservedRolePrefix)
+}
+
 // The Tagging API never returns these IAM types.
 func gapFillIAM(ctx context.Context, c *Clients, _ string) ([]model.Resource, error) {
 	cl := iam.NewFromConfig(c.Cfg(""))
@@ -47,7 +54,7 @@ func gapFillIAM(ctx context.Context, c *Clients, _ string) ([]model.Resource, er
 			break // no permission: skip, don't fail
 		}
 		for _, role := range page.Roles {
-			if strings.HasPrefix(aws.ToString(role.Path), awsServiceLinkedRolePrefix) {
+			if awsManagedRole(aws.ToString(role.Path)) {
 				continue
 			}
 			// only GetRole returns tags

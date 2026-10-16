@@ -36,3 +36,20 @@ func TestIamResourceSegment(t *testing.T) {
 		}
 	}
 }
+
+// Service-linked and Identity Center roles aren't ours to manage.
+func TestAWSManagedRole(t *testing.T) {
+	cases := map[string]bool{
+		"/aws-service-role/elasticloadbalancing.amazonaws.com/": true,
+		"/aws-reserved/sso.amazonaws.com/":                      true,
+		"/aws-reserved/sso.amazonaws.com/us-east-2/":            true,
+		"/service-role/":      false,
+		"/":                   false,
+		"/team/aws-reserved/": false,
+	}
+	for path, want := range cases {
+		if got := awsManagedRole(path); got != want {
+			t.Errorf("awsManagedRole(%q) = %v, want %v", path, got, want)
+		}
+	}
+}

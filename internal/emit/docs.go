@@ -76,7 +76,7 @@ func moduleReadme(cat string, m *modBuild) string {
 	sort.Strings(types)
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s\n\n", cat)
-	fmt.Fprintf(&b, "Internal decomposition of the account's %s resources. Not a reusable\n", cat)
+	fmt.Fprintf(&b, "%s %s resources. Not a reusable\n", moduleReadmeMarker, cat)
 	b.WriteString("module: it is instantiated once, by the root `main.tf`.\n\n")
 	if len(types) > 0 {
 		b.WriteString("Resource types:\n\n")

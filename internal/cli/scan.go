@@ -211,7 +211,11 @@ func writeJSON(path string, v any, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(b, '\n'), mode)
+	if err := os.WriteFile(path, append(b, '\n'), mode); err != nil {
+		return err
+	}
+	// WriteFile keeps an existing file's mode.
+	return os.Chmod(path, mode)
 }
 
 func relOrAbs(dir string) string {

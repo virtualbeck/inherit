@@ -33,10 +33,17 @@ func Load(ctx context.Context, region, profile string) (aws.Config, error) {
 	if err != nil {
 		return aws.Config{}, fmt.Errorf("load AWS config: %w", err)
 	}
+	if cfg.Region == "" {
+		// Only for identity and region listing; scans set their own.
+		cfg.Region = fallbackRegion
+	}
 	return cfg, nil
 }
 
 const retryMaxAttempts = 10
+
+// Used when neither --regions nor the profile names one.
+const fallbackRegion = "us-east-1"
 
 // One shared pool; the SDK clones per client.
 func sharedHTTPClient() aws.HTTPClient {

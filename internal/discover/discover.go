@@ -156,6 +156,9 @@ func Sweep(ctx context.Context, cfg aws.Config, opt Options) (model.Inventory, i
 	}
 	sort.Slice(inv.Resources, func(i, j int) bool { return inv.Resources[i].ARN < inv.Resources[j].ARN })
 
+	if err := ctx.Err(); err != nil {
+		return inv, skipped, excludedHits, err // interrupted: incomplete
+	}
 	if len(inv.Resources) == 0 && len(errs) > 0 {
 		return inv, skipped, excludedHits, fmt.Errorf("discovery failed in every region: %v", errs[0])
 	}

@@ -1,7 +1,12 @@
 package discover
 
 import (
+	"context"
+	"errors"
 	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 
 	"github.com/virtualbeck/inherit/model"
 )
@@ -98,5 +103,20 @@ func TestFilterResourcesServicesAllowlist(t *testing.T) {
 		if r.Service == "lambda" {
 			t.Error("lambda should have been dropped by the --services allowlist")
 		}
+	}
+}
+
+// Interrupted discovery is an error, not a smaller inventory.
+func TestSweepReportsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cfg := aws.Config{
+		Region:       "us-east-1",
+		Credentials:  credentials.NewStaticCredentialsProvider("AKIDEXAMPLE", "secret", ""),
+		BaseEndpoint: aws.String("http://127.0.0.1:1"), // never the network
+	}
+	_, _, _, err := Sweep(ctx, cfg, Options{Account: "1", Regions: []string{"us-east-1", "us-west-2"}})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("want context.Canceled, got %v", err)
 	}
 }

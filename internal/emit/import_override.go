@@ -1,12 +1,15 @@
 package emit
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 
 	"github.com/hashicorp/hcl/v2/hclwrite"
 )
+
+const importOverrideFile = "import_override.tf"
 
 // Transient ignore_changes = all; never leave these behind.
 func WriteImportOverrides(outDir string, imports []ImportSpec) (paths []string, err error) {
@@ -51,7 +54,7 @@ func WriteImportOverrides(outDir string, imports []ImportSpec) (paths []string, 
 			f.Body().AppendNewline()
 		}
 
-		path := filepath.Join(outDir, "modules", cat, "import_override.tf")
+		path := filepath.Join(outDir, "modules", cat, importOverrideFile)
 		if err = os.WriteFile(path, f.Bytes(), 0o644); err != nil {
 			return paths, err
 		}
@@ -64,4 +67,19 @@ func RemoveImportOverrides(paths []string) {
 	for _, p := range paths {
 		_ = os.Remove(p)
 	}
+}
+
+// RemoveLeftoverImportOverrides undoes an interrupted fast import.
+func RemoveLeftoverImportOverrides(outDir string) (int, error) {
+	paths, _ := filepath.Glob(filepath.Join(outDir, "modules", "*", importOverrideFile))
+	scratch, _ := filepath.Glob(filepath.Join(outDir, ".fastimport-*"))
+	for _, p := range paths {
+		if err := removeIfExists(p); err != nil {
+			return 0, fmt.Errorf("removing leftover %s: %w", p, err)
+		}
+	}
+	for _, d := range scratch {
+		_ = os.RemoveAll(d)
+	}
+	return len(paths), nil
 }

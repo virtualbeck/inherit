@@ -81,6 +81,12 @@ func adopt(ctx context.Context, dir, tfBin, mode string) error {
 	if fi, err := os.Stat(absDir); err != nil || !fi.IsDir() {
 		return fmt.Errorf("%s is not a project directory (run `inherit scan` first)", dir)
 	}
+	// Left by a hard-killed fast import; would hide all drift.
+	if n, err := emit.RemoveLeftoverImportOverrides(absDir); err != nil {
+		return err
+	} else if n > 0 {
+		fmt.Fprintf(os.Stderr, "removed %d leftover import_override.tf from an interrupted fast import\n", n)
+	}
 
 	var imports []emit.ImportSpec
 	if mode != "" {

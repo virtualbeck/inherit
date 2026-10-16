@@ -1,6 +1,7 @@
 package redact
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/virtualbeck/inherit/model"
@@ -173,5 +174,43 @@ func TestSplitRedactsAccessKeyIDsInTags(t *testing.T) {
 	}
 	if keySecrets != 3 {
 		t.Errorf("want 3 recovered access-key-shaped keys, got %d: %+v", keySecrets, secrets)
+	}
+}
+
+// Same input, same output: no map-order churn.
+func TestSplitDeterministic(t *testing.T) {
+	mk := func() *model.Inventory {
+		return &model.Inventory{Resources: []model.Resource{
+			{
+				ARN: "arn:aws:iam::1:user/u", TFType: "aws_iam_user",
+				Config: map[string]any{"tags": map[string]string{
+					"AKIAIOSFODNN7EXAMPLE": "a", "AKIAI44QH8DHBEXAMPLE": "b", "AKIAJ7W2EXAMPLEKEY03": "c",
+				}},
+			},
+			{
+				ARN: "arn:aws:lambda:us-east-1:1:function:f", TFType: "aws_lambda_function",
+				Config: map[string]any{"environment": []any{map[string]any{"variables": map[string]any{
+					"A": "1", "B": "2", "C": "3", "D": "4",
+				}}}},
+			},
+			{
+				ARN: "arn:aws:cloudformation:us-east-1:1:stack/s/x", TFType: "aws_cloudformation_stack",
+				Config: map[string]any{"parameters": map[string]any{"P1": "x", "P2": "y", "P3": "z"}},
+			},
+		}}
+	}
+	snap := func() string {
+		inv := mk()
+		b, err := json.Marshal([]any{Split(inv), inv})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	want := snap()
+	for range 50 {
+		if got := snap(); got != want {
+			t.Fatalf("output changed between runs:\n%s\n%s", want, got)
+		}
 	}
 }

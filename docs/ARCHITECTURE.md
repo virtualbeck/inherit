@@ -37,9 +37,15 @@ re-runs `emit` from it offline.
   still fails falls back to classic import.
 - **Interrupts clean up.** Ctrl-C/SIGTERM cancel the root context
   (`internal/cli/root.go`) instead of killing the process, so the override
-  files are always removed. `internal/tf` runs tofu in its own process group
-  and forwards one interrupt with a 30s grace before killing it (a second
-  SIGINT makes tofu exit immediately, which is what this avoids).
+  files are removed. A second Ctrl-C kills inherit outright, so `plan` and
+  `import` also delete any leftover `import_override.tf` before they start.
+  `internal/tf` runs tofu in its own process group and forwards one
+  interrupt (Ctrl-Break on Windows) with a 30s grace before killing it (a
+  second SIGINT makes tofu exit immediately, which is what this avoids). An
+  interrupted `scan` fails instead of writing a partial project.
+- **Regeneration starts clean.** `emit.Write` first removes the files a
+  previous run generated (module directories whose README it wrote, and
+  `UNMANAGED_FIELDS.md`), keeping anything else you added.
 - **No secrets in `.tf` files.** `internal/redact` replaces covered values
   with a sentinel and writes the real ones to `inventory.secrets.json`;
   `internal/emit/unmanaged.go` turns every attribute holding the sentinel into

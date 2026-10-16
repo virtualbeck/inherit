@@ -1,6 +1,10 @@
 package cli
 
 import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/hcl/v2"
@@ -90,5 +94,33 @@ func TestReadImportsEscapingAndShape(t *testing.T) {
 	writeFile(t, dir+"/imports.tf", "import {\n  to = aws_vpc.main\n  id = \"vpc-1\"\n}\n")
 	if _, err := readImports(dir); err == nil {
 		t.Error("an import outside module.<category> should be an error, not skipped")
+	}
+}
+
+// A hard-killed fast import's overrides hide all drift.
+func TestAdoptRemovesLeftoverOverrides(t *testing.T) {
+	dir := t.TempDir()
+	override := filepath.Join(dir, "modules", "network", "import_override.tf")
+	scratch := filepath.Join(dir, ".fastimport-123")
+	for _, d := range []string{filepath.Dir(override), scratch} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeFile(t, override, "resource \"aws_vpc\" \"main\" {\n  lifecycle {\n    ignore_changes = all\n  }\n}\n")
+	writeFile(t, filepath.Join(dir, "modules", "network", "main.tf"), "# keep\n")
+
+	// Cleanup runs before tofu is needed.
+	err := adopt(context.Background(), dir, "no-such-tofu-binary", "")
+	if err == nil || !strings.Contains(err.Error(), "no tofu or terraform") {
+		t.Fatalf("want the missing-binary error, got %v", err)
+	}
+	for _, p := range []string{override, scratch} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("%s should be gone (err=%v)", p, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "modules", "network", "main.tf")); err != nil {
+		t.Errorf("main.tf must be kept: %v", err)
 	}
 }

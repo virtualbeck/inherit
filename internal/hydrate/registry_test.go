@@ -2,7 +2,10 @@ package hydrate
 
 import (
 	"context"
+	"errors"
 	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
 
 	"github.com/virtualbeck/inherit/model"
 )
@@ -53,5 +56,22 @@ func TestHydrateRegisteredUnknownType(t *testing.T) {
 	_, _, err := hydrateRegistered(context.Background(), nil, model.Resource{TFType: "aws_definitely_not_registered"})
 	if err == nil {
 		t.Error("expected an error for an unregistered type")
+	}
+}
+
+// Interrupted hydration is an error, not a smaller inventory.
+func TestRunReportsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	inv := &model.Inventory{Resources: []model.Resource{{
+		ARN: "arn:aws:ec2:us-east-1:1:vpc/vpc-1", Service: "ec2", Type: "vpc",
+		Region: "us-east-1", ID: "vpc-1",
+	}}}
+	_, err := Run(ctx, aws.Config{Region: "us-east-1"}, inv, Options{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("want context.Canceled, got %v", err)
+	}
+	if inv.Resources[0].Config != nil {
+		t.Error("no hydrator should run after cancellation")
 	}
 }

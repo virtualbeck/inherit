@@ -299,6 +299,9 @@ func Run(ctx context.Context, cfg aws.Config, inv *model.Inventory, opt Options)
 
 	// gap-filled resources arrive with Config set
 	st.Errors = append(st.Errors, runGapFillers(ctx, clients, inv, gapFillConcurrency)...)
+	if err := ctx.Err(); err != nil {
+		return st, err // partial results are not a project
+	}
 
 	type job struct {
 		r *model.Resource
@@ -328,6 +331,9 @@ func Run(ctx context.Context, cfg aws.Config, inv *model.Inventory, opt Options)
 		done int
 	)
 	par.Each(jobs, opt.Concurrency, func(j job) {
+		if ctx.Err() != nil {
+			return // interrupted; Run reports it
+		}
 		r := j.r
 		if r.Region == "" {
 			if resolve, ok := regionResolvers[r.TFType]; ok {
@@ -358,8 +364,14 @@ func Run(ctx context.Context, cfg aws.Config, inv *model.Inventory, opt Options)
 		r.Config = cfgMap
 	})
 
+	if err := ctx.Err(); err != nil {
+		return st, err
+	}
 	// fan out children, then recount
 	st.Errors = append(st.Errors, runFanout(ctx, clients, inv, opt.Concurrency)...)
+	if err := ctx.Err(); err != nil {
+		return st, err
+	}
 	st.Hydrated = 0
 	for _, r := range inv.Resources {
 		if r.Config != nil {

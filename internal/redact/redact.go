@@ -3,7 +3,9 @@ package redact
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
+	"slices"
 
 	"github.com/virtualbeck/inherit/model"
 )
@@ -54,8 +56,8 @@ func Split(inv *model.Inventory) []Secret {
 			}
 		case "aws_cloudformation_stack":
 			if m, ok := r.Config["parameters"].(map[string]any); ok {
-				for k, v := range m {
-					if s, ok := v.(string); ok && s != "" && s != Sentinel {
+				for _, k := range slices.Sorted(maps.Keys(m)) {
+					if s, ok := m[k].(string); ok && s != "" && s != Sentinel {
 						add(*r, "parameters."+k, s)
 						m[k] = Sentinel
 					}
@@ -72,8 +74,8 @@ func redactLambdaEnv(r model.Resource, cfg map[string]any, add func(model.Resour
 	if vars == nil {
 		return
 	}
-	for k, v := range vars {
-		if s, ok := v.(string); ok && s != Sentinel {
+	for _, k := range slices.Sorted(maps.Keys(vars)) {
+		if s, ok := vars[k].(string); ok && s != Sentinel {
 			add(r, "environment.variables."+k, s)
 			vars[k] = Sentinel
 		}
@@ -109,7 +111,9 @@ func redactAccessKeyIDsAt(r model.Resource, v any, path string, add func(model.R
 	case map[string]any:
 		n := 0
 		renames := map[string]string{}
-		for k, val := range m {
+		// sorted: stable placeholder numbers and secret order
+		for _, k := range slices.Sorted(maps.Keys(m)) {
+			val := m[k]
 			sub := joinPath(path, k)
 			if accessKeyRe.MatchString(k) {
 				n++
@@ -132,7 +136,8 @@ func redactAccessKeyIDsAt(r model.Resource, v any, path string, add func(model.R
 	case map[string]string:
 		n := 0
 		renames := map[string]string{}
-		for k, val := range m {
+		for _, k := range slices.Sorted(maps.Keys(m)) {
+			val := m[k]
 			sub := joinPath(path, k)
 			if accessKeyRe.MatchString(k) {
 				n++

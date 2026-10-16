@@ -311,6 +311,10 @@ func Write(inv model.Inventory, outDir string, opt Options) (Result, error) {
 	}
 	sort.Strings(cats)
 
+	// A re-run must not inherit files it no longer writes.
+	if err := removeStale(outDir); err != nil {
+		return res, err
+	}
 	for _, c := range cats {
 		m := mods[c]
 		dir := filepath.Join(outDir, "modules", c)

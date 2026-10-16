@@ -1,44 +1,10 @@
-tofu init
+@@part tofu init ... 
 @@
-tofu validate
+ok
+@@part tofu validate ... 
 @@
+ok
 tofu plan
-@@
-module.dns.aws_route53_zone.main: Preparing import... [id=Z0123456789ABCDEFGHIJ]
-module.network.aws_default_vpc.main: Preparing import... [id=vpc-0aaa11112222bbbb1]
-module.network.aws_security_group.main: Preparing import... [id=sg-0bbb22223333cccc2]
-module.network.aws_vpc_security_group_ingress_rule.main: Preparing import... [id=sgr-0ccc33334444dddd3]
-module.compute.aws_instance.main: Preparing import... [id=i-0ddd44445555eeee4]
-module.dns.aws_route53_record.main: Preparing import... [id=Z0123456789ABCDEFGHIJ_www.acme.example_A]
-module.integration.aws_sns_topic.main: Preparing import... [id=arn:aws:sns:us-east-1:999999999999:alerts]
-module.integration.aws_sqs_queue.main: Preparing import... [id=https://sqs.us-east-1.amazonaws.com/999999999999/orders]
-module.observability.aws_cloudwatch_log_group.main: Preparing import... [id=/aws/lambda/resize]
-module.security.aws_iam_group.main: Preparing import... [id=Admins]
-module.security.aws_iam_group_policy_attachment.policy["0174716e"]: Preparing import... [id=Deploy/arn:aws:iam::aws:policy/AmazonS3FullAccess]
-module.security.aws_iam_group_policy_attachment.policy["08c6ca62"]: Preparing import... [id=Admins/arn:aws:iam::aws:policy/AdministratorAccess]
-module.security.aws_iam_group_policy_attachment.policy["aee5be59"]: Preparing import... [id=ReadOnly/arn:aws:iam::aws:policy/ReadOnlyAccess]
-module.security.aws_iam_policy.main: Preparing import... [id=arn:aws:iam::999999999999:policy/backup-role]
-module.security.aws_iam_role.main: Preparing import... [id=resize]
-module.storage.aws_s3_bucket.app_assets_999999999999: Preparing import... [id=app-assets-999999999999]
-module.storage.aws_s3_bucket.backups_999999999999: Preparing import... [id=backups-999999999999]
-@@
-module.dns.aws_route53_zone.main: Refreshing state... [id=Z0123456789ABCDEFGHIJ]
-module.network.aws_default_vpc.main: Refreshing state... [id=vpc-0aaa11112222bbbb1]
-module.network.aws_security_group.main: Refreshing state... [id=sg-0bbb22223333cccc2]
-module.network.aws_vpc_security_group_ingress_rule.main: Refreshing state... [id=sgr-0ccc33334444dddd3]
-module.compute.aws_instance.main: Refreshing state... [id=i-0ddd44445555eeee4]
-module.dns.aws_route53_record.main: Refreshing state... [id=Z0123456789ABCDEFGHIJ_www.acme.example_A]
-module.integration.aws_sns_topic.main: Refreshing state... [id=arn:aws:sns:us-east-1:999999999999:alerts]
-module.integration.aws_sqs_queue.main: Refreshing state... [id=https://sqs.us-east-1.amazonaws.com/999999999999/orders]
-module.observability.aws_cloudwatch_log_group.main: Refreshing state... [id=/aws/lambda/resize]
-module.security.aws_iam_group.main: Refreshing state... [id=Admins]
-module.security.aws_iam_group_policy_attachment.policy["0174716e"]: Refreshing state... [id=Deploy/arn:aws:iam::aws:policy/AmazonS3FullAccess]
-module.security.aws_iam_group_policy_attachment.policy["08c6ca62"]: Refreshing state... [id=Admins/arn:aws:iam::aws:policy/AdministratorAccess]
-module.security.aws_iam_group_policy_attachment.policy["aee5be59"]: Refreshing state... [id=ReadOnly/arn:aws:iam::aws:policy/ReadOnlyAccess]
-module.security.aws_iam_policy.main: Refreshing state... [id=arn:aws:iam::999999999999:policy/backup-role]
-module.security.aws_iam_role.main: Refreshing state... [id=resize]
-module.storage.aws_s3_bucket.app_assets_999999999999: Refreshing state... [id=app-assets-999999999999]
-module.storage.aws_s3_bucket.backups_999999999999: Refreshing state... [id=backups-999999999999]
 @@
 
 OpenTofu will perform the following actions:

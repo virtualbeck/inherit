@@ -80,8 +80,10 @@ inherit plan       tofu init + validate + plan against a generated project
 inherit import     plan, plus state-only import of every resource (--fast: batched)
 ```
 
-`plan` and `import` keep `tofu init` and `validate` quiet: their output is
-shown only when one of them fails. The plan itself is printed in full.
+`plan` and `import` keep `tofu init` and `validate` quiet, printing
+`tofu init ... ok` (or `failed`, followed by tofu's full output). The plan
+itself is printed in full; on OpenTofu 1.8+ it runs with `-concise`, which
+drops the per-resource "Refreshing state..." progress lines.
 
 Authenticate however you normally do (env vars, SSO, a profile): `inherit`
 reads the standard AWS SDK chain and shows you the account, identity and

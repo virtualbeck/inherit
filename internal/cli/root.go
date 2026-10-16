@@ -29,9 +29,10 @@ func Execute() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	go func() { <-ctx.Done(); stop() }()
 	err := root.ExecuteContext(ctx)
+	interrupted := ctx.Err() != nil // read before stop(), which cancels ctx
 	stop()
 	if err != nil {
-		if ctx.Err() != nil {
+		if interrupted {
 			err = fmt.Errorf("interrupted: %w", err)
 		}
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

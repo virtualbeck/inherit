@@ -93,8 +93,31 @@ func withOutput(out string, err error) error {
 
 // Plan never writes state; no lock needed.
 func (r *Runner) Plan(ctx context.Context) error {
-	_, err := r.run(ctx, stream, "plan", "-input=false", "-lock=false", "-no-color")
+	args := []string{"plan", "-input=false", "-lock=false", "-no-color"}
+	if r.concise(ctx) {
+		args = append(args, "-concise") // drops the per-resource progress lines
+	}
+	_, err := r.run(ctx, stream, args...)
 	return err
+}
+
+// concise reports whether plan takes -concise (OpenTofu 1.8+; not Terraform).
+func (r *Runner) concise(ctx context.Context) bool {
+	out, err := r.run(ctx, stdout, "version")
+	return err == nil && conciseSupported(out)
+}
+
+func conciseSupported(version string) bool {
+	line, _, _ := strings.Cut(version, "\n")
+	v, ok := strings.CutPrefix(strings.TrimSpace(line), "OpenTofu v")
+	if !ok {
+		return false
+	}
+	var major, minor int
+	if _, err := fmt.Sscanf(v, "%d.%d", &major, &minor); err != nil {
+		return false
+	}
+	return major > 1 || major == 1 && minor >= 8
 }
 
 func (r *Runner) StateList(ctx context.Context) (map[string]bool, error) {

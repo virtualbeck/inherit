@@ -78,6 +78,9 @@ func importCmd() *cobra.Command {
 // adopt runs init, validate, optional import, then plan.
 func adopt(ctx context.Context, dir, tfBin, mode string) error {
 	absDir, _ := filepath.Abs(dir)
+	if fi, err := os.Stat(absDir); err != nil || !fi.IsDir() {
+		return fmt.Errorf("%s is not a project directory (run `inherit scan` first)", dir)
+	}
 
 	var imports []emit.ImportSpec
 	if mode != "" {
@@ -93,13 +96,12 @@ func adopt(ctx context.Context, dir, tfBin, mode string) error {
 	}
 	name := runner.Name()
 
-	fmt.Fprintf(os.Stderr, "%s init\n", name)
-	if err := runner.Init(ctx); err != nil {
-		return fmt.Errorf("%s init: %w", name, err)
+	// init and validate print a status; their own output only on failure.
+	if err := quietStep(name+" init", func() error { return runner.Init(ctx) }); err != nil {
+		return err
 	}
-	fmt.Fprintf(os.Stderr, "%s validate\n", name)
-	if err := runner.Validate(ctx); err != nil {
-		return fmt.Errorf("%s validate: %w", name, err)
+	if err := quietStep(name+" validate", func() error { return runner.Validate(ctx) }); err != nil {
+		return err
 	}
 
 	// Plan still runs; import failures fail the command.
@@ -122,6 +124,16 @@ func adopt(ctx context.Context, dir, tfBin, mode string) error {
 		return importErr
 	}
 	fmt.Fprintf(os.Stderr, "\ndone. project: %s\n", absDir)
+	return nil
+}
+
+func quietStep(label string, run func() error) error {
+	fmt.Fprintf(os.Stderr, "%s ... ", label)
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, "failed")
+		return fmt.Errorf("%s: %w", label, err)
+	}
+	fmt.Fprintln(os.Stderr, "ok")
 	return nil
 }
 

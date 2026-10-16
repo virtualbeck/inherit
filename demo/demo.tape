@@ -51,12 +51,8 @@ Enter
 # validate
 Sleep 2.5s
 Enter
-Sleep 1s
-Enter
 # imports read each resource
-Sleep 1.5s
-Enter
-Sleep 3s
+Sleep 5.5s
 Enter
 Sleep 3.5s
 
@@ -75,10 +71,8 @@ Enter
 # plan, verify no-op, apply
 Sleep 9s
 Enter
-Sleep 1s
-Enter
-# final plan refresh
-Sleep 3.5s
+# final plan
+Sleep 4.5s
 Enter
 Sleep 4s
 

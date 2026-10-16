@@ -158,14 +158,14 @@ footer img { display: block; flex: none; height: 20px; width: auto; }
   <p class="caption"># a simulated account, paced to real timings</p>
   <details>
     <summary>as text</summary>
-<pre><span class="p">$ </span>inherit scan --profile demo
-<span class="d">found 207 resources across 17 regions
-  pruned 155 default + 34 singleton resources
-  18 resources across 2 regions kept
-  16 resources across 7 modules, 18 import blocks</span>
+<pre><span class="p">$ </span>inherit scan --profile demo --regions us-east-1
+<span class="d">found 28 resources across 1 region
+  pruned 9 default + 2 singleton resources
+  17 resources across 1 region kept
+  15 resources across 7 modules, 17 import blocks</span>
 
 <span class="p">$ </span>inherit plan inherit-999999999999
-<span class="ok">Plan: 18 to import, 0 to add, 0 to change, 0 to destroy.</span>
+<span class="ok">Plan: 17 to import, 0 to add, 0 to change, 0 to destroy.</span>
 
 <span class="p">$ </span>inherit import --fast inherit-999999999999
 <span class="ok">No changes. Your infrastructure matches the configuration.</span></pre>

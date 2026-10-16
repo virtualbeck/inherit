@@ -104,7 +104,7 @@ func scanCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(os.Stderr, "\nfound %d resources across %d regions", len(inv.Resources), len(regions))
+			fmt.Fprintf(os.Stderr, "\nfound %d resources across %s", len(inv.Resources), plural(len(regions), "region"))
 			if ephem > 0 {
 				fmt.Fprintf(os.Stderr, " (%d ephemeral skipped)", ephem)
 			}
@@ -136,8 +136,8 @@ func scanCmd() *cobra.Command {
 				if len(pr.Regions) > 0 {
 					fmt.Fprintf(os.Stderr, "; %d regions with nothing in use dropped (%s)", len(pr.Regions), strings.Join(pr.Regions, ", "))
 				}
-				fmt.Fprintf(os.Stderr, "\n  %d resources across %d regions kept (--include-defaults to keep everything)\n",
-					len(inv.Resources), len(inv.Regions))
+				fmt.Fprintf(os.Stderr, "\n  %d resources across %s kept (--include-defaults to keep everything)\n",
+					len(inv.Resources), plural(len(inv.Regions), "region"))
 			}
 
 			secrets := redact.Split(&inv)
@@ -223,4 +223,11 @@ func relOrAbs(dir string) string {
 		return rel
 	}
 	return dir
+}
+
+func plural(n int, word string) string {
+	if n == 1 {
+		return "1 " + word
+	}
+	return fmt.Sprintf("%d %ss", n, word)
 }

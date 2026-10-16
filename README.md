@@ -80,6 +80,9 @@ inherit plan       tofu init + validate + plan against a generated project
 inherit import     plan, plus state-only import of every resource (--fast: batched)
 ```
 
+`plan` and `import` keep `tofu init` and `validate` quiet: their output is
+shown only when one of them fails. The plan itself is printed in full.
+
 Authenticate however you normally do (env vars, SSO, a profile): `inherit`
 reads the standard AWS SDK chain and shows you the account, identity and
 regions it resolved before doing anything. A read-only identity is enough:

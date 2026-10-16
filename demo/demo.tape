@@ -22,8 +22,8 @@ Show
 
 Sleep 800ms
 
-# scan: ~9s
-Type "inherit scan --profile demo"
+# scan: ~6s
+Type "inherit scan --profile demo --regions us-east-1"
 Sleep 500ms
 Enter
 # identity + enabled regions
@@ -33,16 +33,8 @@ Sleep 2s
 Type "y"
 Sleep 300ms
 Enter
-# discovery: regions finish over ~5s
-Sleep 1s
-Enter
-Sleep 900ms
-Enter
-Sleep 800ms
-Enter
-Sleep 900ms
-Enter
-Sleep 1.4s
+# discovery
+Sleep 2.5s
 Enter
 # hydrate, prune, generate
 Sleep 2.6s

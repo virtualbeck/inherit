@@ -74,13 +74,20 @@ func (r *Runner) run(ctx context.Context, mode output, args ...string) (string, 
 	return out.String(), err
 }
 
+// Init is quiet; its output only matters when it fails.
 func (r *Runner) Init(ctx context.Context) error {
-	_, err := r.run(ctx, stream, "init", "-input=false", "-no-color")
-	return err
+	return withOutput(r.run(ctx, combined, "init", "-input=false", "-no-color"))
 }
 
+// Validate is quiet unless the configuration is invalid.
 func (r *Runner) Validate(ctx context.Context) error {
-	_, err := r.run(ctx, stream, "validate", "-no-color")
+	return withOutput(r.run(ctx, combined, "validate", "-no-color"))
+}
+
+func withOutput(out string, err error) error {
+	if err != nil && strings.TrimSpace(out) != "" {
+		return fmt.Errorf("%w\n%s", err, strings.TrimSpace(out))
+	}
 	return err
 }
 

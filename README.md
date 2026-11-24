@@ -133,6 +133,7 @@ import non-existent remote object" for something deleted in between).
 inherit-123456789012/
   inventory.json          what was discovered (secrets redacted)
   inventory.secrets.json  the redacted values (gitignored; never commit it)
+  coverage.json           type counts only: hydrated, awaiting a hydrator, unmapped, failed
   .gitignore              secrets, state and plan files, .terraform/
   versions.tf             required OpenTofu/provider versions
   providers.tf            the aws provider, plus one alias per extra region

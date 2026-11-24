@@ -119,6 +119,7 @@ func scanCmd() *cobra.Command {
 				return err
 			}
 			inv.ToolVersion = version.Version
+			cov := coverageReport(inv, st)
 			fmt.Fprintf(os.Stderr, "  %d hydrated, %d awaiting a hydrator, %d unmapped types\n",
 				st.Hydrated, sum(st.NoHydrator), len(st.Unmapped))
 			if debug {
@@ -153,6 +154,9 @@ func scanCmd() *cobra.Command {
 				return err
 			}
 			if err := writeJSON(filepath.Join(absOut, secretsFile), secrets, 0o600); err != nil {
+				return err
+			}
+			if err := writeJSON(filepath.Join(absOut, coverageFile), cov, 0o644); err != nil {
 				return err
 			}
 			if len(secrets) > 0 {

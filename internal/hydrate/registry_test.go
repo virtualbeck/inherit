@@ -75,3 +75,36 @@ func TestRunReportsCancellation(t *testing.T) {
 		t.Error("no hydrator should run after cancellation")
 	}
 }
+
+// Coverage gaps are counted per type so real scans can rank what to hydrate next.
+func TestRunCountsGapsPerType(t *testing.T) {
+	arnToTF[[2]string{"probe", "nohyd"}] = "aws_probe_nohyd"
+	arnToTF[[2]string{"probe", "err"}] = "aws_probe_err"
+	registry["aws_probe_err"] = func(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
+		return nil, errors.New("access denied")
+	}
+	t.Cleanup(func() {
+		delete(arnToTF, [2]string{"probe", "nohyd"})
+		delete(arnToTF, [2]string{"probe", "err"})
+		delete(registry, "aws_probe_err")
+	})
+	inv := &model.Inventory{Resources: []model.Resource{
+		{Service: "probe", Type: "nohyd", ID: "a"},
+		{Service: "probe", Type: "nohyd", ID: "b"},
+		{Service: "probe", Type: "err", ID: "c"},
+		{Service: "zzz", Type: "thing", ID: "d"},
+	}}
+	st, err := Run(context.Background(), aws.Config{Region: "us-east-1"}, inv, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.NoHydrator["aws_probe_nohyd"] != 2 {
+		t.Errorf("NoHydrator = %v, want aws_probe_nohyd: 2", st.NoHydrator)
+	}
+	if st.Unmapped["zzz.thing"] != 1 {
+		t.Errorf("Unmapped = %v, want zzz.thing: 1", st.Unmapped)
+	}
+	if st.ErrorsByType["aws_probe_err"] != 1 {
+		t.Errorf("ErrorsByType = %v, want aws_probe_err: 1", st.ErrorsByType)
+	}
+}

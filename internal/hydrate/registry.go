@@ -277,7 +277,9 @@ type Stats struct {
 	Hydrated   int
 	NoHydrator map[string]int // tf type -> count (mapped but no hydrator yet)
 	Unmapped   map[string]int // "service.type" -> count
-	Errors     []error
+	// ErrorsByType counts hydrator failures per tf type; gap-filler failures appear only in Errors.
+	ErrorsByType map[string]int
+	Errors       []error
 }
 
 type Options struct {
@@ -295,7 +297,7 @@ func Run(ctx context.Context, cfg aws.Config, inv *model.Inventory, opt Options)
 	}
 	clients := newClients(cfg)
 
-	st := Stats{NoHydrator: map[string]int{}, Unmapped: map[string]int{}}
+	st := Stats{NoHydrator: map[string]int{}, Unmapped: map[string]int{}, ErrorsByType: map[string]int{}}
 
 	// gap-filled resources arrive with Config set
 	st.Errors = append(st.Errors, runGapFillers(ctx, clients, inv, gapFillConcurrency)...)
@@ -352,6 +354,7 @@ func Run(ctx context.Context, cfg aws.Config, inv *model.Inventory, opt Options)
 		}
 		if err != nil {
 			st.Errors = append(st.Errors, fmt.Errorf("%s %s: %w", r.TFType, r.ID, err))
+			st.ErrorsByType[r.TFType]++
 			return
 		}
 		if newType, ok := cfgMap[retypeSentinel].(string); ok {

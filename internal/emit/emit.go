@@ -1086,6 +1086,9 @@ func rawImportID(r model.Resource) string {
 			return fmt.Sprintf("https://sqs.%s.amazonaws.com/%s/%s", r.Region, r.Account, r.ID)
 		}
 		return ""
+	case "aws_transfer_host_key":
+		// ARN id is <server-id>/<host-key-id>; the provider wants a comma
+		return strings.Replace(r.ID, "/", ",", 1)
 	case "aws_cloudformation_stack":
 		// id is <name>/<uuid>; imported by name
 		if n, _, ok := strings.Cut(r.ID, "/"); ok {

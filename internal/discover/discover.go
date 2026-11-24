@@ -36,6 +36,7 @@ var ephemeral = map[[2]string]bool{
 	{"ec2", "security-group-rule"}:                 true, // emitted via the aws_security_group fanout
 	{"elasticloadbalancing", "listener-rule"}:      true, // emitted via the aws_lb_listener fanout
 	{"application-autoscaling", "scalable-target"}: true, // emitted via the app-autoscaling gap-filler
+	{"elasticfilesystem", "access-point"}:          true, // emitted via the aws_efs_file_system fanout
 	{"rds", "snapshot"}:                            true,
 	{"rds", "cluster-snapshot"}:                    true,
 	{"backup", "recovery-point"}:                   true,

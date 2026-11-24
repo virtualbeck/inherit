@@ -54,3 +54,11 @@ func TestImportID(t *testing.T) {
 		}
 	}
 }
+
+// The provider imports a Transfer host key as "<server-id>,<host-key-id>".
+func TestTransferHostKeyImportID(t *testing.T) {
+	r := model.Resource{TFType: "aws_transfer_host_key", ID: "s-0123456789abcdef0/key-0123456789abcdef0"}
+	if got := importID(r, "aws", "123456789012"); got != "s-0123456789abcdef0,key-0123456789abcdef0" {
+		t.Errorf("importID = %q", got)
+	}
+}

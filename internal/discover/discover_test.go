@@ -21,6 +21,7 @@ func TestIsEphemeral(t *testing.T) {
 		{Service: "ec2", Type: "security-group-rule"},
 		{Service: "elasticloadbalancing", Type: "listener-rule"},
 		{Service: "application-autoscaling", Type: "scalable-target"},
+		{Service: "elasticfilesystem", Type: "access-point"},
 	}
 	no := []model.Resource{
 		{Service: "ec2", Type: "instance"},

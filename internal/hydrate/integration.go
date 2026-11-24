@@ -423,7 +423,7 @@ func hydrateCloudFormationStack(ctx context.Context, c *Clients, r model.Resourc
 	s := out.Stacks[0]
 	// StackSet instances and nested stacks have owners.
 	if strings.HasPrefix(name, "StackSet-") || s.ParentId != nil || s.RootId != nil {
-		return nil, fmt.Errorf("StackSet / nested stack (managed elsewhere)")
+		return nil, skip("StackSet / nested stack (managed elsewhere)")
 	}
 	cfg := map[string]any{"name": aws.ToString(s.StackName)}
 	if len(s.Capabilities) > 0 {
@@ -952,7 +952,7 @@ func hydrateCloudFormationStackSet(ctx context.Context, c *Clients, r model.Reso
 		name = n
 	}
 	if strings.HasPrefix(name, "AWSControlTower") || strings.HasPrefix(name, "StackSet-") {
-		return nil, fmt.Errorf("service-managed StackSet")
+		return nil, skip("service-managed StackSet")
 	}
 	cl := cloudformation.NewFromConfig(c.Cfg(r.Region))
 	out, err := cl.DescribeStackSet(ctx, &cloudformation.DescribeStackSetInput{StackSetName: &name})

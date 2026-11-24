@@ -2,6 +2,7 @@ package hydrate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -273,6 +274,11 @@ func ResolveTFType(r model.Resource) string {
 	return arnToTF[[2]string{r.Service, r.Type}]
 }
 
+// ErrSkipped marks a resource left out on purpose (owned elsewhere, inactive, AWS-managed); it is not a coverage gap.
+var ErrSkipped = errors.New("skipped")
+
+func skip(reason string) error { return fmt.Errorf("%s: %w", reason, ErrSkipped) }
+
 type Stats struct {
 	Hydrated   int
 	NoHydrator map[string]int // tf type -> count (mapped but no hydrator yet)
@@ -280,6 +286,8 @@ type Stats struct {
 	// ErrorsByType counts hydrator failures per tf type; gap-filler failures appear only in Errors.
 	ErrorsByType map[string]int
 	Errors       []error
+	Skipped      map[string]int // tf type -> resources left out on purpose
+	Skips        []error
 }
 
 type Options struct {
@@ -297,7 +305,7 @@ func Run(ctx context.Context, cfg aws.Config, inv *model.Inventory, opt Options)
 	}
 	clients := newClients(cfg)
 
-	st := Stats{NoHydrator: map[string]int{}, Unmapped: map[string]int{}, ErrorsByType: map[string]int{}}
+	st := Stats{NoHydrator: map[string]int{}, Unmapped: map[string]int{}, ErrorsByType: map[string]int{}, Skipped: map[string]int{}}
 
 	// gap-filled resources arrive with Config set
 	st.Errors = append(st.Errors, runGapFillers(ctx, clients, inv, gapFillConcurrency)...)
@@ -351,6 +359,11 @@ func Run(ctx context.Context, cfg aws.Config, inv *model.Inventory, opt Options)
 		done++
 		if opt.OnProgress != nil {
 			opt.OnProgress(done, len(inv.Resources))
+		}
+		if errors.Is(err, ErrSkipped) {
+			st.Skipped[r.TFType]++
+			st.Skips = append(st.Skips, fmt.Errorf("%s %s: %w", r.TFType, r.ID, err))
+			return
 		}
 		if err != nil {
 			st.Errors = append(st.Errors, fmt.Errorf("%s %s: %w", r.TFType, r.ID, err))

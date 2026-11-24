@@ -120,11 +120,14 @@ func scanCmd() *cobra.Command {
 			}
 			inv.ToolVersion = version.Version
 			cov := coverageReport(inv, st)
-			fmt.Fprintf(os.Stderr, "  %d hydrated, %d awaiting a hydrator, %d unmapped types\n",
-				st.Hydrated, sum(st.NoHydrator), len(st.Unmapped))
+			fmt.Fprintf(os.Stderr, "  %d hydrated, %d awaiting a hydrator, %d unmapped types, %d skipped on purpose\n",
+				st.Hydrated, sum(st.NoHydrator), len(st.Unmapped), sum(st.Skipped))
 			if debug {
 				for _, e := range st.Errors {
 					fmt.Fprintf(os.Stderr, "  ! %v\n", e)
+				}
+				for _, e := range st.Skips {
+					fmt.Fprintf(os.Stderr, "  - %v\n", e)
 				}
 			}
 

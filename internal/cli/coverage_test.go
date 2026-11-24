@@ -22,6 +22,7 @@ func TestCoverageReportHoldsTypeCountsOnly(t *testing.T) {
 		NoHydrator:   map[string]int{"aws_probe_nohyd": 1},
 		Unmapped:     map[string]int{"zzz.thing": 3},
 		ErrorsByType: map[string]int{"aws_probe_err": 2},
+		Skipped:      map[string]int{"aws_cloudformation_stack": 5},
 		Errors:       []error{errors.New("aws_probe_err a: denied"), errors.New("aws_probe_err b: denied"), errors.New("gap filler: denied")},
 	}
 	b, err := json.Marshal(coverageReport(inv, st))
@@ -42,6 +43,7 @@ func TestCoverageReportHoldsTypeCountsOnly(t *testing.T) {
 		NoHydrator      map[string]int `json:"no_hydrator"`
 		Unmapped        map[string]int `json:"unmapped"`
 		HydrationErrors map[string]int `json:"hydration_errors"`
+		Skipped         map[string]int `json:"skipped"`
 		OtherErrors     int            `json:"other_errors"`
 	}
 	if err := json.Unmarshal(b, &r); err != nil {
@@ -55,6 +57,9 @@ func TestCoverageReportHoldsTypeCountsOnly(t *testing.T) {
 	}
 	if r.NoHydrator["aws_probe_nohyd"] != 1 || r.Unmapped["zzz.thing"] != 3 || r.HydrationErrors["aws_probe_err"] != 2 {
 		t.Errorf("gaps = %+v", r)
+	}
+	if r.Skipped["aws_cloudformation_stack"] != 5 {
+		t.Errorf("skipped = %v", r.Skipped)
 	}
 	if r.OtherErrors != 1 {
 		t.Errorf("other_errors = %d, want 1 (the gap filler)", r.OtherErrors)

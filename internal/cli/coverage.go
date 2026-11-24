@@ -17,6 +17,7 @@ type coverage struct {
 	NoHydrator      map[string]int `json:"no_hydrator"`
 	Unmapped        map[string]int `json:"unmapped"`
 	HydrationErrors map[string]int `json:"hydration_errors"`
+	Skipped         map[string]int `json:"skipped"`
 	OtherErrors     int            `json:"other_errors"`
 }
 
@@ -40,6 +41,7 @@ func coverageReport(inv model.Inventory, st hydrate.Stats) coverage {
 		NoHydrator:      st.NoHydrator,
 		Unmapped:        st.Unmapped,
 		HydrationErrors: st.ErrorsByType,
+		Skipped:         st.Skipped,
 		OtherErrors:     len(st.Errors) - typed,
 	}
 }

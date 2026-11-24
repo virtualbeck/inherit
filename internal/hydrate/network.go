@@ -940,7 +940,7 @@ func hydrateManagedPrefixList(ctx context.Context, c *Clients, r model.Resource)
 	}
 	pl := out.PrefixLists[0]
 	if aws.ToString(pl.OwnerId) == "AWS" {
-		return nil, fmt.Errorf("AWS-managed prefix list")
+		return nil, skip("AWS-managed prefix list")
 	}
 	cfg := map[string]any{
 		"name":           aws.ToString(pl.PrefixListName),
@@ -1027,7 +1027,7 @@ func hydrateNetworkInterface(ctx context.Context, c *Clients, r model.Resource) 
 		return nil, fmt.Errorf("service-managed interface (%s)", ni.InterfaceType)
 	}
 	if aws.ToBool(ni.RequesterManaged) {
-		return nil, fmt.Errorf("requester-managed interface")
+		return nil, skip("requester-managed interface")
 	}
 	cfg := map[string]any{"subnet_id": aws.ToString(ni.SubnetId)}
 	if v := aws.ToString(ni.Description); v != "" {

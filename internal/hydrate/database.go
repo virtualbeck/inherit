@@ -805,7 +805,7 @@ func hydrateElastiCacheUser(ctx context.Context, c *Clients, r model.Resource) (
 	}
 	u := out.Users[0]
 	if aws.ToString(u.UserName) == "default" {
-		return nil, fmt.Errorf("default user")
+		return nil, skip("default user")
 	}
 	cfg := map[string]any{
 		"user_id":       aws.ToString(u.UserId),

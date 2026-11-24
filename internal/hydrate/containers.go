@@ -39,7 +39,7 @@ func hydrateECSCluster(ctx context.Context, c *Clients, r model.Resource) (map[s
 	cl := out.Clusters[0]
 	// INACTIVE clusters can't be imported.
 	if aws.ToString(cl.Status) == "INACTIVE" {
-		return nil, fmt.Errorf("INACTIVE ECS cluster (deleted)")
+		return nil, skip("INACTIVE ECS cluster (deleted)")
 	}
 	cfg := map[string]any{"name": aws.ToString(cl.ClusterName)}
 	var settings []any
@@ -105,7 +105,7 @@ func hydrateECSService(ctx context.Context, c *Clients, r model.Resource) (map[s
 	s := out.Services[0]
 	// deleted services can't be imported
 	if aws.ToString(s.Status) == "INACTIVE" {
-		return nil, fmt.Errorf("INACTIVE ECS service (deleted)")
+		return nil, skip("INACTIVE ECS service (deleted)")
 	}
 	// Read normalizes to family:revision on import
 	taskDef := aws.ToString(s.TaskDefinition)
@@ -265,7 +265,7 @@ func hydrateTaskDef(ctx context.Context, c *Clients, r model.Resource) (map[stri
 	td := out.TaskDefinition
 	// Only the ACTIVE revision is importable.
 	if td.Status != ecstypes.TaskDefinitionStatusActive {
-		return nil, fmt.Errorf("task definition revision is %s, not the active one", td.Status)
+		return nil, skip(fmt.Sprintf("task definition revision is %s, not the active one", td.Status))
 	}
 	cd, err := json.Marshal(td.ContainerDefinitions)
 	if err != nil {
@@ -313,7 +313,7 @@ func hydrateECSCapacityProvider(ctx context.Context, c *Clients, r model.Resourc
 	}
 	p := out.CapacityProviders[0]
 	if strings.HasPrefix(aws.ToString(p.Name), "FARGATE") {
-		return nil, fmt.Errorf("AWS-managed capacity provider")
+		return nil, skip("AWS-managed capacity provider")
 	}
 	cfg := map[string]any{"name": aws.ToString(p.Name)}
 	if a := p.AutoScalingGroupProvider; a != nil {

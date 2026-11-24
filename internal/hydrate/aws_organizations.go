@@ -2,7 +2,6 @@ package hydrate
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
@@ -41,7 +40,7 @@ func hydrateOrgPolicy(ctx context.Context, c *Clients, r model.Resource) (map[st
 	ps := out.Policy.PolicySummary
 	// AWS-managed policies aren't manageable
 	if ps.AwsManaged {
-		return nil, fmt.Errorf("AWS-managed organizations policy")
+		return nil, skip("AWS-managed organizations policy")
 	}
 	cfg := map[string]any{
 		"name":    aws.ToString(ps.Name),

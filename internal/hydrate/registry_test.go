@@ -108,3 +108,29 @@ func TestRunCountsGapsPerType(t *testing.T) {
 		t.Errorf("ErrorsByType = %v, want aws_probe_err: 1", st.ErrorsByType)
 	}
 }
+
+// A deliberate skip (owned elsewhere, inactive, AWS-managed) is not a coverage gap.
+func TestRunCountsSkipsApartFromFailures(t *testing.T) {
+	arnToTF[[2]string{"probe", "skip"}] = "aws_probe_skip"
+	registry["aws_probe_skip"] = func(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
+		return nil, skip("StackSet / nested stack (managed elsewhere)")
+	}
+	t.Cleanup(func() {
+		delete(arnToTF, [2]string{"probe", "skip"})
+		delete(registry, "aws_probe_skip")
+	})
+	inv := &model.Inventory{Resources: []model.Resource{{Service: "probe", Type: "skip", ID: "a"}}}
+	st, err := Run(context.Background(), aws.Config{Region: "us-east-1"}, inv, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Skipped["aws_probe_skip"] != 1 {
+		t.Errorf("Skipped = %v, want aws_probe_skip: 1", st.Skipped)
+	}
+	if len(st.ErrorsByType) != 0 || len(st.Errors) != 0 {
+		t.Errorf("a skip must not count as a failure: ErrorsByType=%v Errors=%v", st.ErrorsByType, st.Errors)
+	}
+	if len(st.Skips) != 1 {
+		t.Errorf("Skips = %v, want the one reason kept for --debug", st.Skips)
+	}
+}

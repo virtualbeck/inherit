@@ -41,11 +41,11 @@ func hydrateKMSKey(ctx context.Context, c *Clients, r model.Resource) (map[strin
 	}
 	// AWS-managed keys and external replicas aren't manageable.
 	if string(m.KeyManager) == "AWS" {
-		return nil, fmt.Errorf("AWS-managed KMS key")
+		return nil, skip("AWS-managed KMS key")
 	}
 	// pending deletion: not importable
 	if string(m.KeyState) == "PendingDeletion" {
-		return nil, fmt.Errorf("KMS key pending deletion")
+		return nil, skip("KMS key pending deletion")
 	}
 	// unreadable policy would break plan; skip the key
 	pol := "default"

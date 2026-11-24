@@ -241,6 +241,8 @@ var arnToTF = map[[2]string]string{
 	{"transfer", "certificate"}:        "aws_transfer_certificate",
 	{"transfer", "profile"}:            "aws_transfer_profile",
 	{"transfer", "host-key"}:           "aws_transfer_host_key",
+	{"connect", "instance"}:            "aws_connect_instance",
+	{"lex", "bot"}:                     "aws_lexv2models_bot",
 	{"grafana", "workspaces"}:          "aws_grafana_workspace",
 	{"aps", "workspace"}:               "aws_prometheus_workspace",
 	{"apprunner", "service"}:           "aws_apprunner_service",

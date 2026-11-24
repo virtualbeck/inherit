@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"reflect"
+	"regexp"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -145,13 +146,35 @@ func hydrateDBSubnetGroup(ctx context.Context, c *Clients, r model.Resource) (ma
 }
 
 // SDK names don't snake-case to several attributes.
+var clusterResourceIDRe = regexp.MustCompile(`^cluster-([a-z0-9]{26})$`)
+
+// clusterResourceIDForm returns the DbClusterResourceId an ARN ID spells in lowercase.
+func clusterResourceIDForm(id string) (string, bool) {
+	m := clusterResourceIDRe.FindStringSubmatch(id)
+	if m == nil {
+		return "", false
+	}
+	return "cluster-" + strings.ToUpper(m[1]), true
+}
+
 func hydrateRDSCluster(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
 	sch, err := schemaFor("aws_rds_cluster")
 	if err != nil {
 		return nil, err
 	}
-	out, err := rds.NewFromConfig(c.Cfg(r.Region)).DescribeDBClusters(ctx, &rds.DescribeDBClustersInput{DBClusterIdentifier: &r.ID})
+	cl := rds.NewFromConfig(c.Cfg(r.Region))
+	out, err := cl.DescribeDBClusters(ctx, &rds.DescribeDBClustersInput{DBClusterIdentifier: &r.ID})
 	if err != nil {
+		if _, notFound := errors.AsType[*rdstypes.DBClusterNotFoundFault](err); notFound {
+			if resID, ok := clusterResourceIDForm(r.ID); ok {
+				byRes, rerr := cl.DescribeDBClusters(ctx, &rds.DescribeDBClustersInput{
+					Filters: []rdstypes.Filter{{Name: aws.String("db-cluster-resource-id"), Values: []string{resID}}},
+				})
+				if rerr == nil && len(byRes.DBClusters) == 1 {
+					return nil, skip("resource-ID copy of cluster " + aws.ToString(byRes.DBClusters[0].DBClusterIdentifier) + ", hydrated under its name")
+				}
+			}
+		}
 		return nil, err
 	}
 	if len(out.DBClusters) == 0 {

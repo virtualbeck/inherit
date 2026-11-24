@@ -3,13 +3,17 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/virtualbeck/inherit/internal/awsx"
+	"github.com/virtualbeck/inherit/internal/baseline"
 	"github.com/virtualbeck/inherit/internal/discover"
 	"github.com/virtualbeck/inherit/internal/hydrate"
 	"github.com/virtualbeck/inherit/internal/prune"
@@ -28,6 +32,7 @@ func scanCmd() *cobra.Command {
 		servicesInclude  []string
 		includeEphemeral bool
 		includeDefaults  bool
+		baselineMatch    []string
 		gen              genFlags
 		debug            bool
 		yes              bool
@@ -42,6 +47,10 @@ func scanCmd() *cobra.Command {
 			"Next: `inherit plan <dir>`, then `inherit import <dir>`.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
+			patterns, err := compileBaseline(baselineMatch)
+			if err != nil {
+				return err
+			}
 
 			cfg, err := awsx.Load(ctx, firstNonEmpty(regions), profile)
 			if err != nil {
@@ -119,9 +128,13 @@ func scanCmd() *cobra.Command {
 				return err
 			}
 			inv.ToolVersion = version.Version
+			marked := baseline.Mark(&inv, patterns)
 			cov := coverageReport(inv, st)
 			fmt.Fprintf(os.Stderr, "  %d hydrated, %d awaiting a hydrator, %d unmapped types, %d skipped on purpose\n",
 				st.Hydrated, sum(st.NoHydrator), len(st.Unmapped), sum(st.Skipped))
+			if len(marked) > 0 {
+				fmt.Fprintf(os.Stderr, "  %d organization baseline resources marked (%s)\n", sum(marked), describeCounts(marked))
+			}
 			if debug {
 				for _, e := range st.Errors {
 					fmt.Fprintf(os.Stderr, "  ! %v\n", e)
@@ -180,6 +193,7 @@ func scanCmd() *cobra.Command {
 	f.StringSliceVar(&servicesExclude, "services-exclude", nil, "AWS services or service:type to skip")
 	f.StringSliceVar(&servicesInclude, "services-include", nil, "scan ONLY these AWS services")
 	f.BoolVar(&includeEphemeral, "include-ephemeral", false, "keep snapshots / AMIs / backups (skipped by default)")
+	f.StringArrayVar(&baselineMatch, "baseline", nil, "regex for organization-specific baseline, matched against IDs, ARNs and config values (repeatable)")
 	f.BoolVar(&includeDefaults, "include-defaults", false, "keep AWS-created default VPCs/SGs and per-region setting singletons, and every region (pruned by default)")
 	gen.register(f)
 	f.BoolVar(&debug, "debug", false, "verbose diagnostics")
@@ -241,4 +255,24 @@ func plural(n int, word string) string {
 		return "1 " + word
 	}
 	return fmt.Sprintf("%d %ss", n, word)
+}
+
+func compileBaseline(exprs []string) ([]*regexp.Regexp, error) {
+	var out []*regexp.Regexp
+	for _, e := range exprs {
+		re, err := regexp.Compile(e)
+		if err != nil {
+			return nil, fmt.Errorf("--baseline %q: %w", e, err)
+		}
+		out = append(out, re)
+	}
+	return out, nil
+}
+
+func describeCounts(m map[string]int) string {
+	var parts []string
+	for _, k := range slices.Sorted(maps.Keys(m)) {
+		parts = append(parts, fmt.Sprintf("%s %d", k, m[k]))
+	}
+	return strings.Join(parts, ", ")
 }

@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -63,5 +64,38 @@ func TestCoverageReportHoldsTypeCountsOnly(t *testing.T) {
 	}
 	if r.OtherErrors != 1 {
 		t.Errorf("other_errors = %d, want 1 (the gap filler)", r.OtherErrors)
+	}
+}
+
+func TestEmittableLeavesBaselineOut(t *testing.T) {
+	inv := model.Inventory{Resources: []model.Resource{
+		{TFType: "aws_s3_bucket", ID: "app"},
+		{TFType: "aws_securityhub_account", ID: "1", Baseline: "account-setting"},
+	}}
+	if got := emittable(inv, false).Resources; len(got) != 1 || got[0].ID != "app" {
+		t.Errorf("emittable = %v, want only the workload", got)
+	}
+	if got := emittable(inv, true).Resources; len(got) != 2 {
+		t.Errorf("--include-baseline must emit everything, got %v", got)
+	}
+	pruned := model.Inventory{Regions: []string{"us-east-1"}, Resources: []model.Resource{
+		{TFType: "aws_securityhub_account", ID: "1", Region: "ca-central-1", Baseline: "account-setting"},
+	}}
+	if got := emittable(pruned, true).Regions; !slices.Equal(got, []string{"ca-central-1", "us-east-1"}) {
+		t.Errorf("--include-baseline must restore a pruned baseline region for its provider alias, got %v", got)
+	}
+	if len(inv.Resources) != 2 {
+		t.Error("emittable must not change the inventory it was given")
+	}
+}
+
+func TestCoverageCountsBaselinePerType(t *testing.T) {
+	inv := model.Inventory{Resources: []model.Resource{
+		{TFType: "aws_securityhub_account", Config: map[string]any{}, Baseline: "account-setting"},
+		{TFType: "aws_s3_bucket", Config: map[string]any{}},
+	}}
+	cov := coverageReport(inv, hydrate.Stats{})
+	if cov.Baseline["aws_securityhub_account"] != 1 || len(cov.Baseline) != 1 {
+		t.Errorf("baseline = %v", cov.Baseline)
 	}
 }

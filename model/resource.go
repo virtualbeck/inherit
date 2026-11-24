@@ -20,6 +20,8 @@ type Resource struct {
 
 	// ImportID overrides ID in import blocks when needed.
 	ImportID string `json:"import_id,omitempty"`
+	// Baseline names why organization governance, not this account's IaC, owns the resource; such resources are not emitted.
+	Baseline string `json:"baseline,omitempty"`
 }
 
 type Inventory struct {

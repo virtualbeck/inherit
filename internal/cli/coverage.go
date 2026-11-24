@@ -18,14 +18,18 @@ type coverage struct {
 	Unmapped        map[string]int `json:"unmapped"`
 	HydrationErrors map[string]int `json:"hydration_errors"`
 	Skipped         map[string]int `json:"skipped"`
+	Baseline        map[string]int `json:"baseline"`
 	OtherErrors     int            `json:"other_errors"`
 }
 
 func coverageReport(inv model.Inventory, st hydrate.Stats) coverage {
-	byType := map[string]int{}
+	byType, baseline := map[string]int{}, map[string]int{}
 	for _, r := range inv.Resources {
 		if r.Config != nil && r.TFType != "" {
 			byType[r.TFType]++
+		}
+		if r.Baseline != "" {
+			baseline[r.TFType]++
 		}
 	}
 	typed := 0
@@ -42,6 +46,7 @@ func coverageReport(inv model.Inventory, st hydrate.Stats) coverage {
 		Unmapped:        st.Unmapped,
 		HydrationErrors: st.ErrorsByType,
 		Skipped:         st.Skipped,
+		Baseline:        baseline,
 		OtherErrors:     len(st.Errors) - typed,
 	}
 }

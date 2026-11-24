@@ -138,7 +138,7 @@ func Noise(inv *model.Inventory, opt Options) Report {
 	if !opt.KeepAllRegions {
 		live := map[string]bool{}
 		for _, r := range inv.Resources {
-			if r.Region != "" {
+			if r.Region != "" && r.Baseline == "" {
 				live[r.Region] = true
 			}
 		}

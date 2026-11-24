@@ -1,6 +1,7 @@
 package prune
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/virtualbeck/inherit/model"
@@ -110,5 +111,26 @@ func TestNoiseKeepAllRegions(t *testing.T) {
 	}
 	if rep.Defaults != 1 {
 		t.Errorf("still expected the unused default VPC pruned")
+	}
+}
+
+// Governance baseline alone doesn't make a region in use; the resources stay, marked.
+func TestNoiseDropsRegionsHoldingOnlyBaseline(t *testing.T) {
+	inv := &model.Inventory{
+		Regions: []string{"ca-central-1", "us-east-1"},
+		Resources: []model.Resource{
+			{TFType: "aws_s3_bucket", ID: "app", Region: "us-east-1"},
+			{TFType: "aws_securityhub_account", ID: "1", Region: "ca-central-1", Baseline: "account-setting"},
+		},
+	}
+	rep := Noise(inv, Options{})
+	if !reflect.DeepEqual(inv.Regions, []string{"us-east-1"}) {
+		t.Errorf("Regions = %v, want [us-east-1]", inv.Regions)
+	}
+	if !reflect.DeepEqual(rep.Regions, []string{"ca-central-1"}) {
+		t.Errorf("report regions = %v", rep.Regions)
+	}
+	if len(inv.Resources) != 2 {
+		t.Errorf("baseline resources must stay in the inventory, got %d resources", len(inv.Resources))
 	}
 }

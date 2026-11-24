@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -34,12 +35,14 @@ func writeGitignore(dir string) error {
 }
 
 type genFlags struct {
-	environment string
-	forEach     bool
+	environment     string
+	forEach         bool
+	includeBaseline bool
 }
 
 func (g *genFlags) register(f *pflag.FlagSet) {
 	f.StringVarP(&g.environment, "environment", "e", "", "label for the example state key in backend.tf (e.g. dev, prod)")
+	f.BoolVar(&g.includeBaseline, "include-baseline", false, "also emit organization baseline (Control Tower, Quick Setup, StackSets, account settings), left out by default")
 	f.BoolVar(&g.forEach, "for-each", true, "fold runs of 3+ identical resources into one for_each block (--for-each=false to disable)")
 }
 
@@ -66,8 +69,31 @@ func generateCmd() *cobra.Command {
 	return cmd
 }
 
+// emittable leaves organization baseline out unless asked, restoring any region pruned for holding only baseline.
+func emittable(inv model.Inventory, includeBaseline bool) model.Inventory {
+	out := inv
+	out.Resources = nil
+	regions := slices.Clone(inv.Regions)
+	for _, r := range inv.Resources {
+		if r.Baseline != "" && !includeBaseline {
+			continue
+		}
+		out.Resources = append(out.Resources, r)
+		if r.Region != "" && !slices.Contains(regions, r.Region) {
+			regions = append(regions, r.Region)
+		}
+	}
+	slices.Sort(regions)
+	out.Regions = regions
+	return out
+}
+
 func generate(inv model.Inventory, dir string, g genFlags) error {
 	fmt.Fprintln(os.Stderr, "generating ...")
+	if n := len(inv.Resources) - len(emittable(inv, false).Resources); n > 0 && !g.includeBaseline {
+		fmt.Fprintf(os.Stderr, "  %d organization baseline resources left out (kept in inventory.json; --include-baseline to emit)\n", n)
+	}
+	inv = emittable(inv, g.includeBaseline)
 	er, err := emit.Write(inv, dir, emit.Options{
 		Environment: strings.ToLower(strings.TrimSpace(g.environment)),
 		NoForEach:   !g.forEach,

@@ -100,6 +100,8 @@ inherit scan --services-exclude cloudformation:stackset     # ...or one resource
 inherit scan --services-include ec2,s3           # scan ONLY these services
 inherit scan --include-ephemeral                 # keep snapshots / AMIs / backups
 inherit scan --include-defaults                  # keep default VPCs + per-region singletons
+inherit scan --baseline '^123456789012-reports$'  # also treat matching resources as org baseline
+inherit scan --include-baseline                  # emit org baseline too (left out by default)
 inherit scan -e prod                             # label the example state key in backend.tf
 inherit scan --for-each=false                    # one block per resource, no for_each folding
 inherit scan --debug                             # per-region counts + every hydration error
@@ -133,7 +135,7 @@ import non-existent remote object" for something deleted in between).
 inherit-123456789012/
   inventory.json          what was discovered (secrets redacted)
   inventory.secrets.json  the redacted values (gitignored; never commit it)
-  coverage.json           type counts only: hydrated, awaiting a hydrator, unmapped, failed
+  coverage.json           type counts only: hydrated, awaiting a hydrator, unmapped, failed, skipped, baseline
   .gitignore              secrets, state and plan files, .terraform/
   versions.tf             required OpenTofu/provider versions
   providers.tf            the aws provider, plus one alias per extra region
@@ -144,6 +146,18 @@ inherit-123456789012/
   README.md
   modules/<category>/     compute, network, database, storage, security, ...
 ```
+
+### Organization baseline
+
+Accounts in an AWS Organization carry resources that governance stamps into
+every account and region: Control Tower, SSM Quick Setup, StackSet stacks and
+their children, GuardDuty's SSM association, and account settings such as
+Security Hub, the Resource Explorer index and DefaultView, and SSM service
+settings. `scan` marks them with a `baseline` reason in `inventory.json` and
+leaves them out of the project, since governance, not the account, owns them;
+a region holding only baseline is dropped like an empty one. `--baseline
+<regex>` (repeatable) adds organization-specific patterns, matched against
+IDs, ARNs and config values. `--include-baseline` emits them anyway.
 
 ### Secrets
 

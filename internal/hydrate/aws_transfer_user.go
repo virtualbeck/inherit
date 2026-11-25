@@ -2,6 +2,7 @@ package hydrate
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -10,8 +11,28 @@ import (
 )
 
 func init() {
-	register("aws_transfer_user", genericHydratorOverride("aws_transfer_user", fetchTransferUser, nil))
+	register("aws_transfer_user", hydrateTransferUser)
 	registerFanout("aws_transfer_user", fanoutTransferSSHKeys)
+}
+
+var transferUserGeneric = genericHydratorOverride("aws_transfer_user", fetchTransferUser, nil)
+
+func hydrateTransferUser(ctx context.Context, c *Clients, r model.Resource) (map[string]any, error) {
+	cfg, err := transferUserGeneric(ctx, c, r)
+	if err != nil || cfg == nil {
+		return cfg, err
+	}
+	return transferUserConfig(cfg, r)
+}
+
+// DescribeUser's payload has no server ID, but the provider requires it.
+func transferUserConfig(cfg map[string]any, r model.Resource) (map[string]any, error) {
+	serverID, _, ok := transferUserIDs(r.ID)
+	if !ok {
+		return nil, fmt.Errorf("unexpected transfer user id %q, expected serverID/userName", r.ID)
+	}
+	cfg["server_id"] = serverID
+	return cfg, nil
 }
 
 func transferUserIDs(id string) (serverID, userName string, ok bool) {
